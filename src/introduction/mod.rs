@@ -1,21 +1,65 @@
 #![allow(unused)]
-
-use crate::ast::BinOp::{Minus, Plus, Times};
-use crate::ast::{BinOp, Exp, Stm};
 use std::cmp::max;
 use std::collections::HashMap;
 
+enum Stm {
+    Compound(Box<Stm>, Box<Stm>),
+    Assign(String, Box<Exp>),
+    Print(Vec<Exp>),
+}
+
+impl Stm {
+    fn compound(stm1: Stm, stm2: Stm) -> Self {
+        Self::Compound(Box::from(stm1), Box::from(stm2))
+    }
+
+    fn assign(id: &str, exp: Exp) -> Self {
+        Self::Assign(id.to_string(), Box::from(exp))
+    }
+
+    fn print(exps: Vec<Exp>) -> Self {
+        Self::Print(exps)
+    }
+}
+
+enum Exp {
+    Id(String),
+    Num(i32),
+    Op(Box<Exp>, BinOp, Box<Exp>),
+    Eseq(Box<Stm>, Box<Exp>),
+}
+
+impl Exp {
+    fn id(id: &str) -> Self {
+        Self::Id(id.to_string())
+    }
+
+    fn num(num: i32) -> Self {
+        Self::Num(num)
+    }
+
+    fn op(left: Exp, op: BinOp, right: Exp) -> Self {
+        Self::Op(Box::from(left), op, Box::from(right))
+    }
+
+    fn eseq(stm: Stm, exp: Exp) -> Self {
+        Self::Eseq(Box::from(stm), Box::from(exp))
+    }
+}
+
+enum BinOp {
+    Plus,
+    Minus,
+    Times,
+    Div,
+}
 
 fn max_args(stm: &Stm) -> usize {
     match stm {
         Stm::Compound(stm1, stm2) => max(max_args(stm1), max_args(stm2)),
         Stm::Assign(_, exp) => max_args_in_exp(exp.as_ref()),
         Stm::Print(exps) => {
-            let inner = exps
-                .iter()
-                .map(max_args_in_exp)
-                .max()
-                .unwrap_or(0);
+            let inner = exps.iter().map(max_args_in_exp).max().unwrap_or(0);
             max(exps.len(), inner)
         }
     }
@@ -80,9 +124,9 @@ fn interp_exp(exp: &Exp, table: &HashMap<String, i32>) -> (i32, HashMap<String, 
             let (l, t2) = interp_exp(left.as_ref(), &t1);
             let (r, t3) = interp_exp(right.as_ref(), &t2);
             let result = match op {
-                Plus => l + r,
-                Minus => l - r,
-                Times => l * r,
+                BinOp::Plus => l + r,
+                BinOp::Minus => l - r,
+                BinOp::Times => l * r,
                 BinOp::Div => l / r,
             };
             (result, t3)
@@ -96,16 +140,16 @@ fn interp_exp(exp: &Exp, table: &HashMap<String, i32>) -> (i32, HashMap<String, 
 
 fn prog() -> Stm {
     Stm::compound(
-        Stm::assign("a", Exp::op(Exp::num(5), Plus, Exp::num(3))),
+        Stm::assign("a", Exp::op(Exp::num(5), BinOp::Plus, Exp::num(3))),
         Stm::compound(
             Stm::assign(
                 "b",
                 Exp::eseq(
                     Stm::print(vec![
                         Exp::id("a"),
-                        Exp::op(Exp::id("a"), crate::ast::BinOp::Minus, Exp::num(1)),
+                        Exp::op(Exp::id("a"), BinOp::Minus, Exp::num(1)),
                     ]),
-                    Exp::op(Exp::num(10), Times, Exp::id("a")),
+                    Exp::op(Exp::num(10), BinOp::Times, Exp::id("a")),
                 ),
             ),
             Stm::print(vec![Exp::id("b")]),
