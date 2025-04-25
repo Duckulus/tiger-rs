@@ -77,10 +77,13 @@ fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<Spanned<Token>>, extra::Err<Rich<
         just("=").to(Token::ASSIGN),
     ));
 
-    let comment = just("/*").then(any().and_is(just("*/").not()).repeated()).then(just("*/")).padded();
-    // let comment = recursive(|com: Recursive<dyn Parser<'_, &'a str, (), chumsky::extra::Full<chumsky::error::Rich<'a, char>, (), ()>>>| {
-    //     com.padded().delimited_by(just("/*"), just("*/")).padded()
-    // });
+    let comment = recursive(|com| {
+        com.repeated().padded_by(
+            any().and_is(just("/*").not()).and_is(just("*/").not()).repeated()
+        )
+            .delimited_by(just("/*"), just("*/"))
+    }).padded();
+
 
     let token = num.or(string).or(ident).or(sign);
     token
@@ -98,5 +101,5 @@ fn lex(input: &str) -> Vec<Spanned<Token>> {
 
 #[test]
 pub fn test_lex() {
-    dbg!(lex("3 4 5 /* 6 /* 7 */ 8 */ 9"));
+    dbg!(lex("3 4 5 /* 6 /* 7 */ 8*/ 9"));
 }
