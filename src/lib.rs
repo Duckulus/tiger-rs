@@ -1,3 +1,3 @@
 
 mod introduction;
-mod lexer;
+pub mod lexer;

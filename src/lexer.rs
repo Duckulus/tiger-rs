@@ -1,12 +1,10 @@
-#![allow(unused)] //TODO remove
-
 use chumsky::prelude::*;
 use chumsky::text::{int, whitespace};
 use chumsky::Parser;
 
 #[rustfmt::skip]
 #[derive(Clone, Debug, PartialEq)]
-enum Token {
+pub enum Token {
     ID(String),
     STRING(String), INT(i32),
     COMMA, COLON, SEMICOLON,
@@ -17,7 +15,7 @@ enum Token {
     ARRAY, IF, THEN, ELSE, WHILE, FOR, TO, DO, LET, IN, END, OF, BREAK, NIL, FUNCTION, VAR, TYPE,
 }
 
-fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<Token>, extra::Err<Rich<'a, char>>> {
+pub fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<Token>, extra::Err<Rich<'a, char>>> {
     let num = int(10).map(|s: &str| Token::INT(s.parse().unwrap()));
 
     let string = choice((
@@ -109,7 +107,7 @@ fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<Token>, extra::Err<Rich<'a, char>
 
     let token = choice((num, string, ident, sign));
 
-    // skip initial whitespace
+    // skip initial whitespace and comments
     let skip = choice((comment.clone().map(|_| ()), one_of(" \t\n\r").map(|_| ()))).repeated();
 
     let tokens = token
@@ -138,6 +136,7 @@ pub fn test_lexer() {
     assert_eq!(vec![Token::INT(4)], lex("4 "));
     assert_eq!(vec![Token::INT(4)], lex(" 4 "));
     assert_eq!(vec![Token::INT(4)], lex("/* Hi */ 4 /* Hello World */"));
+    assert_eq!(vec![Token::MINUS, Token::INT(4)], lex("-4"));
 
     assert_eq!(
         vec![
@@ -169,10 +168,9 @@ pub fn test_lexer() {
     assert_eq!(vec![Token::STRING("ABC".to_string())], lex("\"\\065\\066\\067\""));
     assert_eq!(vec![Token::STRING("\u{1}".to_string())], lex("\"\\^a\""));
 
+    let lexer = lexer();
     let queens = "/* A program to solve the 8-queens problem */
-
-let
-    var N := 8
+    let var N := 8
 
     type intArray = array of int
 
@@ -203,8 +201,9 @@ let
  in try(0)
 end
 	";
-    dbg!(lex(queens));
 
-    let lexer = lexer();
+
+    assert!(!lexer.parse(queens).has_errors());
     assert!(lexer.parse("\"\\\"").has_errors());
+    assert!(lexer.parse("\"").has_errors());
 }
