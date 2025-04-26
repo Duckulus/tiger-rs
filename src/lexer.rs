@@ -1,5 +1,5 @@
 use chumsky::prelude::*;
-use chumsky::text::{int, whitespace};
+use chumsky::text::whitespace;
 use chumsky::Parser;
 
 #[rustfmt::skip]
@@ -15,36 +15,44 @@ pub enum Token {
     ARRAY, IF, THEN, ELSE, WHILE, FOR, TO, DO, LET, IN, END, OF, BREAK, NIL, FUNCTION, VAR, TYPE,
 }
 
-pub fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<Token>, extra::Err<Rich<'a, char>>> {
-    let num = int(10).map(|s: &str| Token::INT(s.parse().unwrap()));
-
-    let string = choice((
-        just("\\").ignore_then(regex("[0-9]{3}").map(|s: &str| {
-            (s.parse::<u8>().unwrap() as char).to_string()
-        })), // ascii code
-        just("\\")
-            .ignore_then(whitespace().at_least(1))
+fn string<'a>() -> impl Parser<'a, &'a str, Token, extra::Err<Rich<'a, char>>> {
+    let escape = just("\\").ignore_then(choice((
+        regex("[0-9]{3}")
+            .try_map_with(|s: &str, extra| {
+                s.parse::<u8>()
+                    .map_err(|_| Rich::custom(extra.span(), "Ascii code out of range"))
+            })
+            .map(|i| (i as char).to_string()), // ascii code
+        whitespace()
+            .at_least(1)
             .ignore_then(just("\\"))
             .to("".to_string()), // whitespace continuation
-        just("\\^").ignore_then(any().map(|c: char| {
+        just("^").ignore_then(any().map(|c: char| {
             let mut c = c;
             if c.is_ascii_lowercase() {
                 c = c.to_ascii_uppercase();
             }
             ((c as u8 - 64) as char).to_string()
         })), // control character
-        just("\\\"").to("\"".to_string()), // \" -> "
-        just("\\n").to("\n".to_string()),  // \n -> newline
-        just("\\t").to("\t".to_string()),  // \t -> tab
-        just("\\\\").to("\\".to_string()), // \\ -> \
+        just("\"").to("\"".to_string()), // \" -> "
+        just("n").to("\n".to_string()),  // \n -> newline
+        just("t").to("\t".to_string()),  // \t -> tab
+        just("\\").to("\\".to_string()),
+    )));
+    escape
+        .or(none_of("\"\\").map(|c: char| c.to_string()))
+        .repeated()
+        .collect()
+        .map(|v: Vec<String>| Token::STRING(v.join("")))
+        .delimited_by(just('\"'), just('\"'))
+}
 
-        none_of('"').and_is(just("\\").not()).map(|c: char| c.to_string()),
-    ))
-    .repeated()
-    .collect()
-    .map(|v: Vec<String>| v.join(""))
-    .padded_by(just('"'))
-    .map(|s: String| Token::STRING(s));
+pub type Span = SimpleSpan;
+
+pub fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<(Token, Span)>, extra::Err<Rich<'a, char>>> {
+    let num = regex("[0-9]+")
+        .try_map_with(|s: &str, extra| s.parse().map_err(|e| Rich::custom(extra.span(), e)))
+        .map(Token::INT);
 
     let ident = regex("[a-zA-Z][a-zA-Z0-9_]*").map(|id: &str| match id {
         "array" => Token::ARRAY,
@@ -105,14 +113,16 @@ pub fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<Token>, extra::Err<Rich<'a, c
     })
     .padded();
 
-    let token = choice((num, string, ident, sign));
+    let token = choice((num, string(), ident, sign));
 
     // skip initial whitespace and comments
-    let skip = choice((comment.clone().map(|_| ()), one_of(" \t\n\r").map(|_| ()))).repeated();
+    let skip = choice((comment.clone(), one_of(" \t\n\r").map(|_| ()))).repeated();
 
     let tokens = token
-        .padded_by(comment.clone().repeated())
+        .map_with(|tok, e| (tok, e.span()))
+        .padded_by(comment.repeated())
         .padded()
+        .recover_with(skip_then_retry_until(any().ignored(), end()))
         .repeated()
         .collect();
 
@@ -123,7 +133,12 @@ pub fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<Token>, extra::Err<Rich<'a, c
 pub fn test_lexer() {
     let lex = move |input: &str| -> Vec<Token> {
         let lexer = lexer();
-        lexer.parse(input).unwrap()
+        lexer
+            .parse(input)
+            .unwrap()
+            .into_iter()
+            .map(|(tok, _)| tok)
+            .collect()
     };
 
     assert_eq!(0, lex("").len());
@@ -138,6 +153,7 @@ pub fn test_lexer() {
     assert_eq!(vec![Token::INT(4)], lex("/* Hi */ 4 /* Hello World */"));
     assert_eq!(vec![Token::MINUS, Token::INT(4)], lex("-4"));
 
+    assert_eq!(vec![Token::ID("q_q".to_string())], lex("q_q"));
     assert_eq!(
         vec![
             Token::IF,
@@ -165,7 +181,10 @@ pub fn test_lexer() {
         vec![Token::STRING("HelloWorld".to_string())],
         lex("\"Hello\\  \\World\"")
     );
-    assert_eq!(vec![Token::STRING("ABC".to_string())], lex("\"\\065\\066\\067\""));
+    assert_eq!(
+        vec![Token::STRING("ABC".to_string())],
+        lex("\"\\065\\066\\067\"")
+    );
     assert_eq!(vec![Token::STRING("\u{1}".to_string())], lex("\"\\^a\""));
 
     let lexer = lexer();
@@ -201,7 +220,6 @@ pub fn test_lexer() {
  in try(0)
 end
 	";
-
 
     assert!(!lexer.parse(queens).has_errors());
     assert!(lexer.parse("\"\\\"").has_errors());
