@@ -1,7 +1,9 @@
 use ariadne::{sources, Color, Label, Report, ReportKind};
 use chumsky::prelude::*;
 use std::{env, fs};
+use chumsky::input::Stream;
 use tiger::lexer::lexer;
+use tiger::parser::exp_parser;
 
 fn main() {
     let filename = env::args().nth(1).expect("Expected file argument");
@@ -31,5 +33,7 @@ fn main() {
                     .unwrap()
             })
     }
-    dbg!(tokens.unwrap());
+    let tokens = tokens.unwrap();
+    let exp = exp_parser().parse(Stream::from_iter(tokens.into_iter().map(|(tok,_)| tok))).unwrap();
+    dbg!(exp);
 }

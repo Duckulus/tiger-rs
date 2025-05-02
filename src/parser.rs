@@ -1,3 +1,4 @@
+#![allow(unused)] // TODO
 use crate::ast::{Dec, EField, Exp, Field, FunDec, Oper, Program, Type, Var};
 use crate::lexer::{lexer, Span, Token};
 use chumsky::input::{Stream, ValueInput};
@@ -113,7 +114,7 @@ where
         let seq = just(Token::LPAREN)
             .ignore_then(
                 expr.clone()
-                    .separated_by(just(Token::COMMA))
+                    .separated_by(just(Token::SEMICOLON))
                     .at_least(2)
                     .collect(),
             )
@@ -164,7 +165,7 @@ where
                 just(Token::GT).to(Oper::Gt),
                 just(Token::GE).to(Oper::Ge),
                 just(Token::LT).to(Oper::Lt),
-                just(Token::LT).to(Oper::Le),
+                just(Token::LE).to(Oper::Le),
             )))
             .then(sum.clone())
             .map(|((lhs, op), rhs)| Exp::op(op, lhs, rhs))
@@ -299,7 +300,7 @@ pub fn test_parser() {
     );
     assert_eq!(
         Exp::seq(vec![Exp::int(1), Exp::int(2)]),
-        parse_unwrap("(1,2)")
+        parse_unwrap("(1;2)")
     );
     assert_eq!(
         Exp::op(Oper::Minus, Exp::int(0), Exp::int(1)),
