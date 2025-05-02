@@ -48,8 +48,9 @@ fn string<'a>() -> impl Parser<'a, &'a str, Token, extra::Err<Rich<'a, char>>> {
 }
 
 pub type Span = SimpleSpan;
+pub type Spanned<T> = (T, Span);
 
-pub fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<(Token, Span)>, extra::Err<Rich<'a, char>>> {
+pub fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<Spanned<Token>>, extra::Err<Rich<'a, char>>> {
     let num = regex("[0-9]+")
         .try_map_with(|s: &str, extra| s.parse().map_err(|e| Rich::custom(extra.span(), e)))
         .map(Token::INT);
@@ -92,7 +93,7 @@ pub fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<(Token, Span)>, extra::Err<Ri
         just("*").to(Token::TIMES),
         just("/").to(Token::DIVIDE),
         just("=").to(Token::EQ),
-        just("!=").to(Token::NEQ),
+        just("<>").to(Token::NEQ),
         just("<=").to(Token::LE),
         just("<").to(Token::LT),
         just(">=").to(Token::GE),
