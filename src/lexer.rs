@@ -19,12 +19,9 @@ pub enum Token {
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            // Values
             Token::ID(s) => write!(f, "{}", s),
             Token::STRING(s) => write!(f, "\"{}\"", s),
             Token::INT(n) => write!(f, "{}", n),
-
-            // Punctuation
             Token::COMMA => write!(f, ","),
             Token::COLON => write!(f, ":"),
             Token::SEMICOLON => write!(f, ";"),
@@ -35,8 +32,6 @@ impl fmt::Display for Token {
             Token::LBRACE => write!(f, "{{"),
             Token::RBRACE => write!(f, "}}"),
             Token::DOT => write!(f, "."),
-
-            // Operators
             Token::PLUS => write!(f, "+"),
             Token::MINUS => write!(f, "-"),
             Token::TIMES => write!(f, "*"),
@@ -50,8 +45,6 @@ impl fmt::Display for Token {
             Token::AND => write!(f, "&"),
             Token::OR => write!(f, "|"),
             Token::ASSIGN => write!(f, ":="),
-
-            // Keywords
             Token::ARRAY => write!(f, "array"),
             Token::IF => write!(f, "if"),
             Token::THEN => write!(f, "then"),

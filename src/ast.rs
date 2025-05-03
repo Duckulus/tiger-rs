@@ -2,9 +2,9 @@
 
 use crate::lexer::Spanned;
 
-type Symbol = String;
+pub type Symbol = String;
 
-type TypSymbol = Symbol;
+pub type TypSymbol = Symbol;
 
 pub type Program = Exp;
 
