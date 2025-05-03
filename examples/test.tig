@@ -1,3 +1,1 @@
-let var a := b
-var c := d
-in nil end
+print("Hello, World")
