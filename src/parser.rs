@@ -1,10 +1,10 @@
 use crate::ast::{Dec, EField, Exp, Field, FunDec, Oper, Type, Var};
-use crate::lexer::{Span, Token};
+use crate::lexer::{Span, Spanned, Token};
 use chumsky::input::ValueInput;
 use chumsky::prelude::*;
 
 pub fn var_parser<'a, I>(
-    expr: impl Parser<'a, I, Exp, extra::Err<Rich<'a, Token, Span>>> + Clone,
+    expr: impl Parser<'a, I, Spanned<Exp>, extra::Err<Rich<'a, Token, Span>>> + Clone,
 ) -> impl Parser<'a, I, Var, extra::Err<Rich<'a, Token, Span>>> + Clone
 where
     I: ValueInput<'a, Token = Token, Span = Span>,
@@ -21,12 +21,11 @@ where
             Box::new(move |var| Var::subscript(var, exp.clone())) as Box<dyn Fn(Var) -> Var>
         });
 
-    simple
-        .foldl(choice((field, subscript)).repeated(), |var, op| op(var))
+    simple.foldl(choice((field, subscript)).repeated(), |var, op| op(var))
 }
 
 pub fn decs_parser<'a, I>(
-    expr: impl Parser<'a, I, Exp, extra::Err<Rich<'a, Token, Span>>> + Clone + 'a,
+    expr: impl Parser<'a, I, Spanned<Exp>, extra::Err<Rich<'a, Token, Span>>> + Clone + 'a,
 ) -> impl Parser<'a, I, Vec<Dec>, extra::Err<Rich<'a, Token, Span>>> + Clone
 where
     I: ValueInput<'a, Token = Token, Span = Span>,
@@ -93,12 +92,13 @@ where
     choice((var_dec, ty_dec, fun_dec)).repeated().collect()
 }
 
-pub fn exp_parser<'a, I>() -> impl Parser<'a, I, Exp, extra::Err<Rich<'a, Token, Span>>> + Clone
+pub fn exp_parser<'a, I>()
+-> impl Parser<'a, I, Spanned<Exp>, extra::Err<Rich<'a, Token, Span>>> + Clone
 where
     I: ValueInput<'a, Token = Token, Span = Span>,
 {
     recursive(|expr| {
-        let var = var_parser(expr.clone()).map(Exp::var).boxed();
+        let var = var_parser(expr.clone()).boxed().map(Exp::var);
         let nil = just(Token::NIL).to(Exp::Nil);
         let int = select! {Token::INT(n) => Exp::Int(n)};
         let string = select! {Token::STRING(s) =>Exp::String(s)};
@@ -120,36 +120,45 @@ where
             .clone()
             .delimited_by(just(Token::LPAREN), just(Token::RPAREN));
 
-        let atom = choice((call, var, nil, int, string, seq, parens)).boxed();
+        let atom = choice((call, var, nil, int, string, seq))
+            .map_with(|exp, e| (exp, e.span()))
+            .or(parens)
+            .boxed();
 
         let unary = just(Token::MINUS)
+            .ignored()
             .repeated()
-            .foldr(atom, |_, e| Exp::op(Oper::Minus, Exp::int(0), e))
+            .foldr_with(atom, |_, exp, e| {
+                (
+                    Exp::op(Oper::Minus, (Exp::int(0), SimpleSpan::from(0..0)), exp),
+                    e.span(),
+                )
+            })
             .boxed();
 
         let product = unary
             .clone()
-            .foldl(
+            .foldl_with(
                 choice((
                     just(Token::TIMES).map(|_| Oper::Times),
                     just(Token::DIVIDE).map(|_| Oper::Divide),
                 ))
                 .then(unary)
                 .repeated(),
-                |lhs, (op, rhs)| Exp::op(op, lhs, rhs),
+                |lhs, (op, rhs), e| (Exp::op(op, lhs, rhs), e.span()),
             )
             .boxed();
 
         let sum = product
             .clone()
-            .foldl(
+            .foldl_with(
                 choice((
                     just(Token::PLUS).map(|_| Oper::Plus),
                     just(Token::MINUS).map(|_| Oper::Minus),
                 ))
                 .then(product)
                 .repeated(),
-                |lhs, (op, rhs)| Exp::op(op, lhs, rhs),
+                |lhs, (op, rhs), e| (Exp::op(op, lhs, rhs), e.span()),
             )
             .boxed();
 
@@ -164,23 +173,23 @@ where
                 just(Token::LE).to(Oper::Le),
             )))
             .then(sum.clone())
-            .map(|((lhs, op), rhs)| Exp::op(op, lhs, rhs))
+            .map_with(|((lhs, op), rhs), e| (Exp::op(op, lhs, rhs), e.span()))
             .boxed();
 
         let comparison = comparison.or(sum);
 
         let and = comparison
             .clone()
-            .foldl(
+            .foldl_with(
                 just(Token::AND).ignore_then(comparison).repeated(),
-                |lhs, rhs| Exp::iff(lhs, rhs, Some(Exp::Int(0))),
+                |lhs, rhs, e| (Exp::iff(lhs, rhs, Some((Exp::Int(0), SimpleSpan::from(0..0)))), e.span()),
             )
             .boxed();
 
         let or = and
             .clone()
-            .foldl(just(Token::OR).ignore_then(and).repeated(), |lhs, rhs| {
-                Exp::iff(lhs, Exp::Int(1), Some(rhs))
+            .foldl_with(just(Token::OR).ignore_then(and).repeated(), |lhs, rhs, e| {
+                (Exp::iff(lhs, (Exp::Int(1), SimpleSpan::from(0..0)), Some(rhs)), e.span())
             })
             .boxed();
 
@@ -195,26 +204,26 @@ where
                     .collect(),
             )
             .then_ignore(just(Token::RBRACE))
-            .map(|(typ, fields)| Exp::record(typ, fields))
+            .map_with(|(typ, fields), e| (Exp::record(typ, fields), e.span()))
             .boxed();
 
         let assign = var_parser(expr.clone())
             .then_ignore(just(Token::ASSIGN))
             .then(expr.clone())
-            .map(|(var, exp)| Exp::assign(var, exp))
+            .map_with(|(var, exp), e| (Exp::assign(var, exp), e.span()))
             .boxed();
         let iff = just(Token::IF)
             .ignore_then(expr.clone())
             .then_ignore(just(Token::THEN))
             .then(expr.clone())
             .then(just(Token::ELSE).ignore_then(expr.clone()).or_not())
-            .map(|((cond, then), elsee)| Exp::iff(cond, then, elsee))
+            .map_with(|((cond, then), elsee), e| (Exp::iff(cond, then, elsee), e.span()))
             .boxed();
         let whilee = just(Token::WHILE)
             .ignore_then(expr.clone())
             .then_ignore(just(Token::DO))
             .then(expr.clone())
-            .map(|(cond, body)| Exp::whilee(cond, body))
+            .map_with(|(cond, body), e| (Exp::whilee(cond, body), e.span()))
             .boxed();
         let forr = just(Token::FOR)
             .ignore_then(select! {Token::ID(s) => s})
@@ -224,16 +233,16 @@ where
             .then(expr.clone())
             .then_ignore(just(Token::DO))
             .then(expr.clone())
-            .map(|(((s, lo), hi), body)| Exp::forr(s, lo, hi, body))
+            .map_with(|(((s, lo), hi), body), e| (Exp::forr(s, lo, hi, body), e.span()))
             .boxed();
-        let breakk = just(Token::BREAK).to(Exp::Break);
+        let breakk = just(Token::BREAK).to(Exp::Break).map_with(|exp, e| (exp, e.span()));
         let array = select! {Token::ID(s) => s}
             .then_ignore(just(Token::LBRACK))
             .then(expr.clone())
             .then_ignore(just(Token::RBRACK))
             .then_ignore(just(Token::OF))
             .then(expr.clone())
-            .map(|((s, n), i)| Exp::array(s, n, i))
+            .map_with(|((s, n), i), e| (Exp::array(s, n, i), e.span()))
             .boxed();
 
         let lett = just(Token::LET)
@@ -241,7 +250,7 @@ where
             .then_ignore(just(Token::IN))
             .then(expr.clone().separated_by(just(Token::SEMICOLON)).collect())
             .then_ignore(just(Token::END))
-            .map(|(decs, exps)| Exp::Let(decs, exps))
+            .map_with(|(decs, exps), e| (Exp::Let(decs, exps), e.span()))
             .boxed();
 
         choice((lett, array, breakk, forr, whilee, iff, assign, record, or)).boxed()

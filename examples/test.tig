@@ -1,1 +1,3 @@
---i
+let var a := b
+var c := d
+in nil end

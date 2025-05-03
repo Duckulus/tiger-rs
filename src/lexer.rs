@@ -1,3 +1,4 @@
+use std::fmt;
 use chumsky::prelude::*;
 use chumsky::text::whitespace;
 use chumsky::Parser;
@@ -14,6 +15,64 @@ pub enum Token {
     ASSIGN,
     ARRAY, IF, THEN, ELSE, WHILE, FOR, TO, DO, LET, IN, END, OF, BREAK, NIL, FUNCTION, VAR, TYPE,
 }
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            // Values
+            Token::ID(s) => write!(f, "{}", s),
+            Token::STRING(s) => write!(f, "\"{}\"", s),
+            Token::INT(n) => write!(f, "{}", n),
+
+            // Punctuation
+            Token::COMMA => write!(f, ","),
+            Token::COLON => write!(f, ":"),
+            Token::SEMICOLON => write!(f, ";"),
+            Token::LPAREN => write!(f, "("),
+            Token::RPAREN => write!(f, ")"),
+            Token::LBRACK => write!(f, "["),
+            Token::RBRACK => write!(f, "]"),
+            Token::LBRACE => write!(f, "{{"),
+            Token::RBRACE => write!(f, "}}"),
+            Token::DOT => write!(f, "."),
+
+            // Operators
+            Token::PLUS => write!(f, "+"),
+            Token::MINUS => write!(f, "-"),
+            Token::TIMES => write!(f, "*"),
+            Token::DIVIDE => write!(f, "/"),
+            Token::EQ => write!(f, "="),
+            Token::NEQ => write!(f, "<>"),
+            Token::LT => write!(f, "<"),
+            Token::LE => write!(f, "<="),
+            Token::GT => write!(f, ">"),
+            Token::GE => write!(f, ">="),
+            Token::AND => write!(f, "&"),
+            Token::OR => write!(f, "|"),
+            Token::ASSIGN => write!(f, ":="),
+
+            // Keywords
+            Token::ARRAY => write!(f, "array"),
+            Token::IF => write!(f, "if"),
+            Token::THEN => write!(f, "then"),
+            Token::ELSE => write!(f, "else"),
+            Token::WHILE => write!(f, "while"),
+            Token::FOR => write!(f, "for"),
+            Token::TO => write!(f, "to"),
+            Token::DO => write!(f, "do"),
+            Token::LET => write!(f, "let"),
+            Token::IN => write!(f, "in"),
+            Token::END => write!(f, "end"),
+            Token::OF => write!(f, "of"),
+            Token::BREAK => write!(f, "break"),
+            Token::NIL => write!(f, "nil"),
+            Token::FUNCTION => write!(f, "function"),
+            Token::VAR => write!(f, "var"),
+            Token::TYPE => write!(f, "type"),
+        }
+    }
+}
+
 
 fn string<'a>() -> impl Parser<'a, &'a str, Token, extra::Err<Rich<'a, char>>> {
     let escape = just("\\").ignore_then(choice((
