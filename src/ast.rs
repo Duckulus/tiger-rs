@@ -49,8 +49,6 @@ pub struct Field {
     pub typ: TypSymbol,
 }
 
-
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Exp {
     Var(Box<Var>),

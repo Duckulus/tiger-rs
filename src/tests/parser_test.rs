@@ -1,3 +1,4 @@
+#![allow(unused)]
 use crate::ast::{Dec, EField, Exp, Field, FunDec, Oper, Program, Symbol, TypSymbol, Type, Var};
 use crate::lexer::{lexer, Spanned, Token};
 use crate::parser;
