@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use crate::lexer::Spanned;
+use crate::parse::lexer::Spanned;
 
 pub type Symbol = String;
 

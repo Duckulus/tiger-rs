@@ -1,8 +1,9 @@
 use ariadne::{sources, Color, Label, Report, ReportKind};
 use chumsky::prelude::*;
 use std::{env, fs};
-use tiger::lexer::lexer;
-use tiger::parser::exp_parser;
+use tiger::parse::lexer::lexer;
+use tiger::parse::parser::exp_parser;
+use tiger::semant::trans_exp;
 
 fn main() {
     let filename = env::args().nth(1).expect("Expected file argument");
@@ -24,7 +25,9 @@ fn main() {
     err.into_iter()
         .map(|e| e.map_token(|c| c.to_string()))
         .chain(
-            parse_errs.into_iter().map(|e| e.map_token(|c| c.to_string())),
+            parse_errs
+                .into_iter()
+                .map(|e| e.map_token(|c| c.to_string())),
         )
         .for_each(|e| {
             Report::build(ReportKind::Error, (filename.clone(), e.span().into_range()))
@@ -44,5 +47,22 @@ fn main() {
                 .print(sources([(filename.clone(), src.clone())]))
                 .unwrap()
         });
-    dbg!(program);
+
+    let exp = program.unwrap().0;
+    let ir = trans_exp(exp);
+    if let Ok(ir) = ir {
+        dbg!(ir);
+    } else if let Err(e) = ir {
+        Report::build(ReportKind::Error, (filename.clone(), e.span().into_range()))
+            .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
+            .with_message("Error while typechecking")
+            .with_label(
+                Label::new((filename.clone(), e.span().into_range()))
+                    .with_message(e.message())
+                    .with_color(Color::Red),
+            )
+            .finish()
+            .print(sources([(filename.clone(), src.clone())]))
+            .unwrap()
+    }
 }

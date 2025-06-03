@@ -3,7 +3,5 @@
 mod tests;
 
 mod introduction;
-pub mod lexer;
-pub mod ast;
-pub mod parser;
-pub mod symbol_table;
+pub mod parse;
+pub mod semant;

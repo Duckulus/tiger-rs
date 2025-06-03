@@ -1,5 +1,5 @@
-use crate::ast::{Dec, EField, Exp, Field, FunDec, Oper, Type, Var};
-use crate::lexer::{Span, Spanned, Token};
+use crate::parse::ast::{Dec, EField, Exp, Field, FunDec, Oper, Type, Var};
+use crate::parse::lexer::{Span, Spanned, Token};
 use chumsky::input::ValueInput;
 use chumsky::prelude::*;
 

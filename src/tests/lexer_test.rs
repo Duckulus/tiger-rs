@@ -1,6 +1,6 @@
 use chumsky::Parser;
-use crate::lexer;
-use crate::lexer::Token;
+use crate::parse::lexer;
+use crate::parse::lexer::Token;
 
 #[test]
 pub fn test_lexer() {

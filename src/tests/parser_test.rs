@@ -1,7 +1,7 @@
 #![allow(unused)]
-use crate::ast::{Dec, EField, Exp, Field, FunDec, Oper, Program, Symbol, TypSymbol, Type, Var};
-use crate::lexer::{lexer, Spanned, Token};
-use crate::parser;
+use crate::parse::ast::{Dec, EField, Exp, Field, FunDec, Oper, Program, Symbol, TypSymbol, Type, Var};
+use crate::parse::lexer::{lexer, Spanned, Token};
+use crate::parse::parser;
 use chumsky::error::Rich;
 use chumsky::input::Stream;
 use chumsky::prelude::SimpleSpan;

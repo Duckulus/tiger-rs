@@ -1,4 +1,4 @@
-use crate::symbol_table::SymbolTable;
+use crate::semant::env::SymbolTable;
 
 #[test]
 pub fn test_symbol_table() {
