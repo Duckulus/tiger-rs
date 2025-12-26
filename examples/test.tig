@@ -1,1 +1,7 @@
-1 + "hi"
+let
+  var a: string := "wsg"
+  function first(a: int, b: int) : int =
+    a
+in
+  first(5, 4)
+end

@@ -32,9 +32,10 @@ where
 {
     let var_dec = just(Token::VAR)
         .ignore_then(select! {Token::ID(s) => s})
+        .map_with(|s, extra| (s, extra.span()))
         .then(
             just(Token::COLON)
-                .ignore_then(select! {Token::ID(s) => s})
+                .ignore_then(select! {Token::ID(s) => s}.map_with(|s, extra| (s, extra.span())))
                 .or_not(),
         )
         .then_ignore(just(Token::ASSIGN))
@@ -43,7 +44,7 @@ where
         .boxed();
     let typed_fields = select! {Token::ID(s)=> s}
         .then_ignore(just(Token::COLON))
-        .then(select! {Token::ID(s)=> s})
+        .then(select! {Token::ID(s)=> s}.map_with(|typ, extra| (typ, extra.span())))
         .map(|(name, typ)| Field { name, typ })
         .separated_by(just(Token::COMMA))
         .collect();
@@ -74,6 +75,7 @@ where
         .then(
             just(Token::COLON)
                 .ignore_then(select! {Token::ID(s) => s})
+                .map_with(|typ, extra| (typ, extra.span()))
                 .or_not(),
         )
         .then_ignore(just(Token::EQ))
@@ -182,15 +184,26 @@ where
             .clone()
             .foldl_with(
                 just(Token::AND).ignore_then(comparison).repeated(),
-                |lhs, rhs, e| (Exp::iff(lhs, rhs, Some((Exp::Int(0), SimpleSpan::from(0..0)))), e.span()),
+                |lhs, rhs, e| {
+                    (
+                        Exp::iff(lhs, rhs, Some((Exp::Int(0), SimpleSpan::from(0..0)))),
+                        e.span(),
+                    )
+                },
             )
             .boxed();
 
         let or = and
             .clone()
-            .foldl_with(just(Token::OR).ignore_then(and).repeated(), |lhs, rhs, e| {
-                (Exp::iff(lhs, (Exp::Int(1), SimpleSpan::from(0..0)), Some(rhs)), e.span())
-            })
+            .foldl_with(
+                just(Token::OR).ignore_then(and).repeated(),
+                |lhs, rhs, e| {
+                    (
+                        Exp::iff(lhs, (Exp::Int(1), SimpleSpan::from(0..0)), Some(rhs)),
+                        e.span(),
+                    )
+                },
+            )
             .boxed();
 
         let record = select! {Token::ID(s) => s}
@@ -235,7 +248,9 @@ where
             .then(expr.clone())
             .map_with(|(((s, lo), hi), body), e| (Exp::forr(s, lo, hi, body), e.span()))
             .boxed();
-        let breakk = just(Token::BREAK).to(Exp::Break).map_with(|exp, e| (exp, e.span()));
+        let breakk = just(Token::BREAK)
+            .to(Exp::Break)
+            .map_with(|exp, e| (exp, e.span()));
         let array = select! {Token::ID(s) => s}
             .then_ignore(just(Token::LBRACK))
             .then(expr.clone())

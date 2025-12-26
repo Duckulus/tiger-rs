@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use crate::parse::lexer::Spanned;
+use crate::parse::lexer::{Span, Spanned};
 
 pub type Symbol = String;
 
@@ -46,7 +46,7 @@ pub struct EField {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     pub name: Symbol,
-    pub typ: TypSymbol,
+    pub typ: Spanned<TypSymbol>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -135,7 +135,7 @@ impl Exp {
 pub struct FunDec {
     pub name: Symbol,
     pub params: Vec<Field>,
-    pub result: Option<TypSymbol>,
+    pub result: Option<Spanned<TypSymbol>>,
     pub body: Spanned<Exp>
 }
 
@@ -145,7 +145,7 @@ pub type NamedType = (TypSymbol, Type);
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dec {
     Function(Vec<FunDec>),
-    Var(Symbol, Option<TypSymbol>, Box<Spanned<Exp>>),
+    Var(Spanned<Symbol>, Option<Spanned<TypSymbol>>, Box<Spanned<Exp>>),
     Type(Vec<NamedType>),
 }
 
@@ -154,7 +154,7 @@ impl Dec {
         Dec::Function(funs)
     }
 
-    pub fn var(name: Symbol, typ: Option<TypSymbol>, init: Spanned<Exp>) -> Self {
+    pub fn var(name: Spanned<Symbol>, typ: Option<Spanned<TypSymbol>>, init: Spanned<Exp>) -> Self {
         Dec::Var(name, typ, Box::new(init))
     }
 
@@ -162,10 +162,6 @@ impl Dec {
         Dec::Type(types)
     }
 }
-
-
-
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {

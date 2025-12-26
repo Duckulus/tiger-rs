@@ -58,7 +58,7 @@ fn main() {
             .with_message("Error while typechecking")
             .with_label(
                 Label::new((filename.clone(), e.span().into_range()))
-                    .with_message(e.message())
+                    .with_message(format!("{:?}", e.kind()))
                     .with_color(Color::Red),
             )
             .finish()

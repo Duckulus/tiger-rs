@@ -1,6 +1,9 @@
 #![allow(unused)]
-use crate::parse::ast::{Dec, EField, Exp, Field, FunDec, Oper, Program, Symbol, TypSymbol, Type, Var};
-use crate::parse::lexer::{lexer, Spanned, Token};
+use crate::parse::ast::Var::Simple;
+use crate::parse::ast::{
+    Dec, EField, Exp, Field, FunDec, Oper, Program, Symbol, TypSymbol, Type, Var,
+};
+use crate::parse::lexer::{Spanned, Token, lexer};
 use crate::parse::parser;
 use chumsky::error::Rich;
 use chumsky::input::Stream;
@@ -21,12 +24,17 @@ fn remove_spans_dec(dec: Dec) -> Dec {
     match dec {
         Dec::Var(var, typ, exp) => Dec::Var(var, typ.map(|typ| typ), Box::new(remove_spans(*exp))),
         Dec::Type(decs) => Dec::Type(decs),
-        Dec::Function(fundecs) => Dec::Function(fundecs.into_iter().map(|dec| FunDec {
-            name: dec.name,
-            params: dec.params,
-            result: dec.result,
-            body: remove_spans(dec.body),
-        }).collect())
+        Dec::Function(fundecs) => Dec::Function(
+            fundecs
+                .into_iter()
+                .map(|dec| FunDec {
+                    name: dec.name,
+                    params: dec.params,
+                    result: dec.result,
+                    body: remove_spans(dec.body),
+                })
+                .collect(),
+        ),
     }
 }
 
@@ -57,7 +65,10 @@ fn remove_spans(exp: Spanned<Exp>) -> Spanned<Exp> {
                     .collect(),
             ),
             Exp::Seq(exps) => Exp::Seq(exps.into_iter().map(|e| remove_spans(e)).collect()),
-            Exp::Assign(var, exp) => Exp::Assign(Box::new(remove_spans_var(*var)), Box::new(remove_spans(*exp))),
+            Exp::Assign(var, exp) => Exp::Assign(
+                Box::new(remove_spans_var(*var)),
+                Box::new(remove_spans(*exp)),
+            ),
             Exp::If { cond, then, elsee } => Exp::If {
                 cond: Box::new(remove_spans(*cond)),
                 then: Box::new(remove_spans(*then)),
@@ -74,9 +85,10 @@ fn remove_spans(exp: Spanned<Exp>) -> Spanned<Exp> {
                 hi: Box::new(remove_spans(*hi)),
                 body: Box::new(remove_spans(*body)),
             },
-            Exp::Let(decs, exps) => {
-                Exp::Let(decs.into_iter().map(remove_spans_dec).collect(), exps.into_iter().map(remove_spans).collect())
-            }
+            Exp::Let(decs, exps) => Exp::Let(
+                decs.into_iter().map(remove_spans_dec).collect(),
+                exps.into_iter().map(remove_spans).collect(),
+            ),
             Exp::Array { typ, size, init } => Exp::Array {
                 typ,
                 size: Box::new(remove_spans(*size)),
@@ -181,6 +193,25 @@ fn array(typ: TypSymbol, size: Spanned<Exp>, init: Spanned<Exp>) -> Spanned<Exp>
     )
 }
 
+fn field(name: String, typ: String) -> Field {
+    Field {
+        name,
+        typ: (typ, SimpleSpan::from(0..0)),
+    }
+}
+
+fn var_dec(id: String, typ: Option<String>, exp: Spanned<Exp>) -> Dec {
+    Dec::Var(
+        (id, SimpleSpan::from(0..0)),
+        typ.map(|s| (s, SimpleSpan::from(0..0))),
+        Box::from(exp),
+    )
+}
+
+fn symbol(symb: String) -> Spanned<Symbol> {
+    (symb, SimpleSpan::from(0..0))
+}
+
 #[test]
 pub fn test_parser() {
     let parse = move |input: &str| -> ParseResult<Spanned<Exp>, Rich<Token>> {
@@ -222,24 +253,11 @@ pub fn test_parser() {
         call("foo".to_string(), vec![int(1), int(2)]),
         parse_unwrap("foo(1,2)")
     );
+    assert_eq!(seq(vec![int(1), int(2)]), parse_unwrap("(1;2)"));
+    assert_eq!(op(Oper::Minus, int(0), int(1)), parse_unwrap("-1"));
+    assert_eq!(op(Oper::Times, int(1), int(1)), parse_unwrap("1*1"));
     assert_eq!(
-        seq(vec![int(1), int(2)]),
-        parse_unwrap("(1;2)")
-    );
-    assert_eq!(
-        op(Oper::Minus, int(0), int(1)),
-        parse_unwrap("-1")
-    );
-    assert_eq!(
-        op(Oper::Times, int(1), int(1)),
-        parse_unwrap("1*1")
-    );
-    assert_eq!(
-        op(
-            Oper::Divide,
-            op(Oper::Divide, int(1), int(2)),
-            int(3)
-        ),
+        op(Oper::Divide, op(Oper::Divide, int(1), int(2)), int(3)),
         parse_unwrap("1/2/3")
     );
     assert_eq!(
@@ -251,19 +269,11 @@ pub fn test_parser() {
         parse_unwrap("1*2+3*4")
     );
     assert_eq!(
-        op(
-            Oper::Plus,
-            int(1),
-            op(Oper::Times, int(2), int(3))
-        ),
+        op(Oper::Plus, int(1), op(Oper::Times, int(2), int(3))),
         parse_unwrap("1+2*3")
     );
     assert_eq!(
-        op(
-            Oper::Times,
-            op(Oper::Plus, int(1), int(2)),
-            int(3)
-        ),
+        op(Oper::Times, op(Oper::Plus, int(1), int(2)), int(3)),
         parse_unwrap("(1+2)*3")
     );
     assert_eq!(
@@ -338,26 +348,16 @@ pub fn test_parser() {
         ),
         parse_unwrap("foo:=bar{a=1,b=2}")
     );
-    assert_eq!(
-        iff(int(1), int(2), None),
-        parse_unwrap("if 1 then 2")
-    );
+    assert_eq!(iff(int(1), int(2), None), parse_unwrap("if 1 then 2"));
     assert_eq!(
         iff(int(1), int(2), Some(int(3))),
         parse_unwrap("if 1 then 2 else 3")
     );
     assert_eq!(
-        iff(
-            int(1),
-            iff(int(2), int(3), Some(int(4))),
-            None
-        ),
+        iff(int(1), iff(int(2), int(3), Some(int(4))), None),
         parse_unwrap("if 1 then if 2 then 3 else 4")
     );
-    assert_eq!(
-        whilee(int(1), int(2)),
-        parse_unwrap("while 1 do 2")
-    );
+    assert_eq!(whilee(int(1), int(2)), parse_unwrap("while 1 do 2"));
     assert_eq!(
         forr("i".to_string(), int(1), int(10), int(11)),
         parse_unwrap("for i:=1 to 10 do 11")
@@ -369,8 +369,8 @@ pub fn test_parser() {
     assert_eq!(
         lett(
             vec![
-                Dec::var("a".to_string(), None, int(1)),
-                Dec::var("b".to_string(), Some("int".to_string()), int(2))
+                var_dec("a".to_string(), None, int(1)),
+                var_dec("b".to_string(), Some("int".to_string()), int(2))
             ],
             vec![
                 op(
@@ -378,7 +378,7 @@ pub fn test_parser() {
                     var(Var::simple("a".to_string())),
                     var(Var::simple("b".to_string()))
                 ),
-               nil() 
+                nil()
             ]
         ),
         parse_unwrap("let var a := 1 var b: int := 2 in a + b;nil end")
@@ -391,14 +391,8 @@ pub fn test_parser() {
                 (
                     "baz".to_string(),
                     Type::Record(vec![
-                        Field {
-                            name: "a".to_string(),
-                            typ: "int".to_string()
-                        },
-                        Field {
-                            name: "b".to_string(),
-                            typ: "int".to_string()
-                        }
+                        field("a".to_string(), "int".to_string()),
+                        field("b".to_string(), "int".to_string())
                     ])
                 ),
             ])],
@@ -414,14 +408,8 @@ pub fn test_parser() {
                 FunDec {
                     name: "foo".to_string(),
                     params: vec![
-                        Field {
-                            name: "a".to_string(),
-                            typ: "int".to_string()
-                        },
-                        Field {
-                            name: "b".to_string(),
-                            typ: "int".to_string()
-                        },
+                        field("a".to_string(), "int".to_string()),
+                        field("b".to_string(), "int".to_string()),
                     ],
                     result: None,
                     body: nil()
@@ -429,7 +417,7 @@ pub fn test_parser() {
                 FunDec {
                     name: "bar".to_string(),
                     params: vec![],
-                    result: Some("int".to_string()),
+                    result: Some(symbol("int".to_string())),
                     body: int(2)
                 },
             ])],

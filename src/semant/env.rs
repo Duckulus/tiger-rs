@@ -1,11 +1,13 @@
+use crate::semant::types::{TypeEnvEntry, ValueEnvEntry};
+use chumsky::container::Container;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 pub type Symbol = String;
 
 pub struct SymbolTable<T> {
-    table: HashMap<Symbol, Vec<Rc<T>>>,
+    table: HashMap<Symbol, Vec<T>>,
     undo_stack: Vec<UndoStackEntry>,
+    builtins: HashMap<Symbol, T>,
 }
 
 enum UndoStackEntry {
@@ -13,11 +15,12 @@ enum UndoStackEntry {
     Entry(Symbol),
 }
 
-impl<T> SymbolTable<T> {
+impl<T: Clone> SymbolTable<T> {
     pub fn empty() -> Self {
         SymbolTable {
             table: HashMap::new(),
             undo_stack: Vec::new(),
+            builtins: HashMap::new(),
         }
     }
 
@@ -25,7 +28,7 @@ impl<T> SymbolTable<T> {
         if !self.table.contains_key(&symbol) {
             self.table.insert(symbol.clone(), Vec::new());
         }
-        self.table.get_mut(&symbol).unwrap().push(Rc::new(value));
+        self.table.get_mut(&symbol).unwrap().push(value);
         self.undo_stack.push(UndoStackEntry::Entry(symbol));
     }
 
@@ -46,9 +49,24 @@ impl<T> SymbolTable<T> {
         }
     }
 
-    pub fn lookup(&self, symbol: Symbol) -> Option<Rc<T>> {
+    pub fn lookup(&self, symbol: &Symbol) -> Option<T> {
         self.table
-            .get(&symbol)
+            .get(symbol)
             .and_then(|bucket| bucket.last().cloned())
+            .or_else(|| self.builtins.get(symbol).cloned())
     }
+}
+
+pub fn base_value_env() -> SymbolTable<ValueEnvEntry> {
+    let table = SymbolTable::empty();
+    table
+}
+
+pub fn base_type_env() -> SymbolTable<TypeEnvEntry> {
+    let mut table = SymbolTable::empty();
+    table.builtins.insert("int".to_string(), TypeEnvEntry::Int);
+    table
+        .builtins
+        .insert("string".to_string(), TypeEnvEntry::String);
+    table
 }
