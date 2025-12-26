@@ -42,10 +42,11 @@ pub fn test_typecheck() {
         Err(ref e)
             if matches!(
                 e.kind(),
-                TypeErrorKind::Mismatch {
+                TypeErrorKind::TypeMismatch {
                     found: TypeEnvEntry::Int,
                     expected: TypeEnvEntry::String,
                 }
             )
     ));
+    
 }

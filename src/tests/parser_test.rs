@@ -12,7 +12,7 @@ use chumsky::{ParseResult, Parser};
 
 fn remove_spans_var(var: Var) -> Var {
     match var {
-        Var::Simple(s) => Var::Simple(s),
+        Var::Simple((s, _)) => Var::Simple((s, SimpleSpan::from(0..0))),
         Var::Field(v, s) => Var::Field(Box::new(remove_spans_var(*v)), s),
         Var::Subscript(v, e) => {
             Var::Subscript(Box::new(remove_spans_var(*v)), Box::new(remove_spans(*e)))
@@ -20,17 +20,42 @@ fn remove_spans_var(var: Var) -> Var {
     }
 }
 
+fn remove_spans_fields(fields: Vec<Field>) -> Vec<Field> {
+    fields
+        .into_iter()
+        .map(|field| Field {
+            name: field.name,
+            typ: (field.typ.0, SimpleSpan::from(0..0)),
+        })
+        .collect()
+}
+
 fn remove_spans_dec(dec: Dec) -> Dec {
     match dec {
-        Dec::Var(var, typ, exp) => Dec::Var(var, typ.map(|typ| typ), Box::new(remove_spans(*exp))),
-        Dec::Type(decs) => Dec::Type(decs),
+        Dec::Var((var, _), typ, exp) => Dec::Var(
+            (var, SimpleSpan::from(0..0)),
+            typ.map(|(typ, _)| (typ, SimpleSpan::from(0..0))),
+            Box::new(remove_spans(*exp)),
+        ),
+        Dec::Type(types) => Dec::Type(
+            types
+                .into_iter()
+                .map(|named_type| match named_type.1 {
+                    Type::Name(_) => named_type,
+                    Type::Record(fields) => {
+                        (named_type.0, Type::Record(remove_spans_fields(fields)))
+                    }
+                    Type::Array(_) => named_type,
+                })
+                .collect::<Vec<_>>(),
+        ),
         Dec::Function(fundecs) => Dec::Function(
             fundecs
                 .into_iter()
                 .map(|dec| FunDec {
                     name: dec.name,
-                    params: dec.params,
-                    result: dec.result,
+                    params: remove_spans_fields(dec.params),
+                    result: dec.result.map(|(symb, _)| (symb, SimpleSpan::from(0..0))),
                     body: remove_spans(dec.body),
                 })
                 .collect(),
@@ -46,9 +71,10 @@ fn remove_spans(exp: Spanned<Exp>) -> Spanned<Exp> {
             Exp::Nil => Exp::Nil,
             Exp::Int(i) => Exp::Int(i),
             Exp::String(s) => Exp::String(s),
-            Exp::Call(symb, args) => {
-                Exp::Call(symb, args.into_iter().map(|e| remove_spans(e)).collect())
-            }
+            Exp::Call((symb, _), args) => Exp::Call(
+                (symb, SimpleSpan::from(0..0)),
+                args.into_iter().map(|e| remove_spans(e)).collect(),
+            ),
             Exp::Op(op, lhs, rhs) => Exp::Op(
                 op,
                 Box::new(remove_spans(*lhs)),
@@ -116,7 +142,10 @@ fn string(s: String) -> Spanned<Exp> {
 }
 
 fn call(name: Symbol, args: Vec<Spanned<Exp>>) -> Spanned<Exp> {
-    (Exp::Call(name, args), SimpleSpan::from(0..0))
+    (
+        Exp::Call((name, SimpleSpan::from(0..0)), args),
+        SimpleSpan::from(0..0),
+    )
 }
 
 fn op(op: Oper, e1: Spanned<Exp>, e2: Spanned<Exp>) -> Spanned<Exp> {
@@ -212,6 +241,10 @@ fn symbol(symb: String) -> Spanned<Symbol> {
     (symb, SimpleSpan::from(0..0))
 }
 
+fn simple_var(id: String) -> Var {
+    Var::simple((id, SimpleSpan::from(0..0)))
+}
+
 #[test]
 pub fn test_parser() {
     let parse = move |input: &str| -> ParseResult<Spanned<Exp>, Rich<Token>> {
@@ -226,22 +259,19 @@ pub fn test_parser() {
     };
     let parse_unwrap =
         move |input: &str| -> Spanned<Program> { remove_spans(parse(input).unwrap()) };
-    assert_eq!(var(Var::simple("foo".to_string())), parse_unwrap("foo"));
-    assert_eq!(var(Var::simple("foo".to_string())), parse_unwrap("(foo)"));
+    assert_eq!(var(simple_var("foo".to_string())), parse_unwrap("foo"));
+    assert_eq!(var(simple_var("foo".to_string())), parse_unwrap("(foo)"));
     assert_eq!(
-        var(Var::field(
-            Var::simple("foo".to_string()),
-            "bar".to_string()
-        )),
+        var(Var::field(simple_var("foo".to_string()), "bar".to_string())),
         parse_unwrap("foo.bar")
     );
     assert_eq!(
-        var(Var::subscript(Var::simple("foo".to_string()), int(42))),
+        var(Var::subscript(simple_var("foo".to_string()), int(42))),
         parse_unwrap("foo[42]")
     );
     assert_eq!(
         var(Var::subscript(
-            Var::field(Var::simple("foo".to_string()), "bar".to_string()),
+            Var::field(simple_var("foo".to_string()), "bar".to_string()),
             int(42)
         )),
         parse_unwrap("foo.bar[42]")
@@ -287,27 +317,27 @@ pub fn test_parser() {
     assert!(parse("a=b=c").has_errors());
     assert_eq!(
         iff(
-            var(Var::simple("a".to_string())),
-            var(Var::simple("b".to_string())),
+            var(simple_var("a".to_string())),
+            var(simple_var("b".to_string())),
             Some(int(0))
         ),
         parse_unwrap("a&b")
     );
     assert_eq!(
         iff(
-            var(Var::simple("a".to_string())),
+            var(simple_var("a".to_string())),
             int(1),
-            Some(var(Var::simple("b".to_string())))
+            Some(var(simple_var("b".to_string())))
         ),
         parse_unwrap("a|b")
     );
     assert_eq!(
         iff(
-            var(Var::simple("a".to_string())),
+            var(simple_var("a".to_string())),
             int(1),
             Some(iff(
-                var(Var::simple("b".to_string())),
-                var(Var::simple("c".to_string())),
+                var(simple_var("b".to_string())),
+                var(simple_var("c".to_string())),
                 Some(int(0))
             ))
         ),
@@ -331,7 +361,7 @@ pub fn test_parser() {
     );
     assert_eq!(
         assign(
-            Var::simple("foo".to_string()),
+            simple_var("foo".to_string()),
             record(
                 "bar".to_string(),
                 vec![
@@ -375,8 +405,8 @@ pub fn test_parser() {
             vec![
                 op(
                     Oper::Plus,
-                    var(Var::simple("a".to_string())),
-                    var(Var::simple("b".to_string()))
+                    var(simple_var("a".to_string())),
+                    var(simple_var("b".to_string()))
                 ),
                 nil()
             ]

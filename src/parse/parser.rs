@@ -5,20 +5,37 @@ use chumsky::prelude::*;
 
 pub fn var_parser<'a, I>(
     expr: impl Parser<'a, I, Spanned<Exp>, extra::Err<Rich<'a, Token, Span>>> + Clone,
-) -> impl Parser<'a, I, Var, extra::Err<Rich<'a, Token, Span>>> + Clone
+) -> impl Parser<'a, I, Spanned<Var>, extra::Err<Rich<'a, Token, Span>>> + Clone
 where
     I: ValueInput<'a, Token = Token, Span = Span>,
 {
-    let simple = select! {Token::ID(s) => Var::simple(s)};
+    let simple = select! {Token::ID(s) => s}
+        .map_with(|id, extra| (id, extra.span()))
+        .map(|(s, span)| (Var::simple((s, span)), span));
+
     let field = just(Token::DOT)
         .ignore_then(select! {Token::ID(s) => s})
-        .map(|s| Box::new(move |var| Var::field(var, s.clone())) as Box<dyn Fn(Var) -> Var>);
+        .map_with(|f, extra| (f, extra.span()))
+        .map(|s: Spanned<String>| {
+            Box::new(move |var: Spanned<Var>| {
+                (
+                    Var::field(var.0, s.clone().0),
+                    SimpleSpan::from(var.1.start..s.1.end),
+                )
+            }) as Box<dyn Fn(Spanned<Var>) -> Spanned<Var>>
+        });
 
     let subscript = just(Token::LBRACK)
         .ignore_then(expr)
         .then_ignore(just(Token::RBRACK))
+        .map_with(|f, extra| (f, extra.span()))
         .map(|exp| {
-            Box::new(move |var| Var::subscript(var, exp.clone())) as Box<dyn Fn(Var) -> Var>
+            Box::new(move |var: Spanned<Var>| {
+                (
+                    Var::subscript(var.0, exp.0.clone()),
+                    SimpleSpan::from(var.1.start..exp.1.end),
+                )
+            }) as Box<dyn Fn(Spanned<Var>) -> Spanned<Var>>
         });
 
     simple.foldl(choice((field, subscript)).repeated(), |var, op| op(var))
@@ -100,11 +117,14 @@ where
     I: ValueInput<'a, Token = Token, Span = Span>,
 {
     recursive(|expr| {
-        let var = var_parser(expr.clone()).boxed().map(Exp::var);
+        let var = var_parser(expr.clone())
+            .boxed()
+            .map(|(var, span)| Exp::var(var));
         let nil = just(Token::NIL).to(Exp::Nil);
         let int = select! {Token::INT(n) => Exp::Int(n)};
         let string = select! {Token::STRING(s) =>Exp::String(s)};
         let call = select! {Token::ID(s) => s}
+            .map_with(|id, extra| (id, extra.span()))
             .then_ignore(just(Token::LPAREN))
             .then(expr.clone().separated_by(just(Token::COMMA)).collect())
             .then_ignore(just(Token::RPAREN))
@@ -223,7 +243,7 @@ where
         let assign = var_parser(expr.clone())
             .then_ignore(just(Token::ASSIGN))
             .then(expr.clone())
-            .map_with(|(var, exp), e| (Exp::assign(var, exp), e.span()))
+            .map_with(|((var, span), exp), e| (Exp::assign(var, exp), e.span()))
             .boxed();
         let iff = just(Token::IF)
             .ignore_then(expr.clone())

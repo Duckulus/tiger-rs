@@ -10,13 +10,13 @@ pub type Program = Exp;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Var {
-    Simple(Symbol),
+    Simple(Spanned<Symbol>),
     Field(Box<Var>, Symbol),
     Subscript(Box<Var>, Box<Spanned<Exp>>),
 }
 
 impl Var {
-    pub fn simple(name: Symbol) -> Self {
+    pub fn simple(name: Spanned<Symbol>) -> Self {
         Var::Simple(name)
     }
     pub fn field(var: Var, name: Symbol) -> Self {
@@ -55,7 +55,7 @@ pub enum Exp {
     Nil,
     Int(i32),
     String(String),
-    Call(Symbol, Vec<Spanned<Exp>>),
+    Call(Spanned<Symbol>, Vec<Spanned<Exp>>),
     Op(Oper, Box<Spanned<Exp>>, Box<Spanned<Exp>>),
     Record(TypSymbol, Vec<EField>),
     Seq(Vec<Spanned<Exp>>),
@@ -85,7 +85,7 @@ impl Exp {
         Exp::String(s)
     }
     
-    pub fn call(name: Symbol, args: Vec<Spanned<Exp>>) -> Self {
+    pub fn call(name: Spanned<Symbol>, args: Vec<Spanned<Exp>>) -> Self {
         Exp::Call(name, args)
     }
     

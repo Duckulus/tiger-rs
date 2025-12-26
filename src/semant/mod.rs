@@ -2,7 +2,8 @@ use crate::parse::ast::{Dec, Exp, Oper, Var};
 use crate::parse::lexer::{Span, Spanned};
 use crate::semant::env::{base_type_env, base_value_env, Symbol, SymbolTable};
 use crate::semant::types::{TypeEnvEntry, ValueEnvEntry};
-use crate::semant::TypeErrorKind::Mismatch;
+use crate::semant::TypeErrorKind::TypeMismatch;
+use chumsky::span::SimpleSpan;
 
 pub mod env;
 
@@ -24,9 +25,7 @@ fn trans_exp_rec(
     match exp.0.clone() {
         Exp::Var(var) => match *var {
             Var::Simple(symb) => {
-                let entry = value_env.lookup(&symb).ok_or_else(|| {
-                    TypeError::new(exp.clone().1, TypeErrorKind::UnknownIdentifier(symb))
-                })?;
+                let entry = value_env_lookup(value_env, symb)?;
 
                 match entry {
                     ValueEnvEntry::Var(typ) => Ok((exp, typ)),
@@ -46,8 +45,39 @@ fn trans_exp_rec(
         Exp::Int(_) => Ok((exp, TypeEnvEntry::Int)),
         Exp::String(_) => Ok((exp, TypeEnvEntry::String)),
         Exp::Call(fun_name, args) => {
-            // let fun_type = value_env.lookup(&fun_name).ok_or_else(|| Err(TypeError::new(fun_name.)));
-            unimplemented!()
+            let fun_type = value_env_lookup(value_env, fun_name.clone())?;
+            if let ValueEnvEntry::Fun(arg_types, return_type) = fun_type {
+                if args.len() != arg_types.len() {
+                    let args_span = if args.len() == 0 {
+                        fun_name.1
+                    } else {
+                        SimpleSpan::from(args.first().unwrap().1.start..args.last().unwrap().1.end)
+                    };
+                    return Err(TypeError::new(
+                        args_span,
+                        TypeErrorKind::ArgCountMismatch {
+                            expected: arg_types.len(),
+                            found: args.len(),
+                        },
+                    ));
+                }
+                for (arg, expected_type) in args.into_iter().zip(arg_types) {
+                    let arg_span = arg.1.clone();
+                    let (_, arg_type) = trans_exp_rec(value_env, type_env, arg)?;
+                    if arg_type != expected_type {
+                        return Err(TypeError::new(
+                            arg_span,
+                            TypeErrorKind::TypeMismatch {
+                                expected: expected_type,
+                                found: arg_type,
+                            },
+                        ));
+                    }
+                }
+                Ok((exp, return_type))
+            } else {
+                Err(TypeError::new(fun_name.1, TypeErrorKind::InvalidIdentifier))
+            }
         }
         Exp::Op(op, lhs, rhs) => {
             match op {
@@ -56,7 +86,7 @@ fn trans_exp_rec(
                     if !matches!(left_type, TypeEnvEntry::Int) {
                         return Err(TypeError::new(
                             lhs.1,
-                            Mismatch {
+                            TypeMismatch {
                                 expected: TypeEnvEntry::Int,
                                 found: left_type,
                             },
@@ -66,7 +96,7 @@ fn trans_exp_rec(
                     if !matches!(right_type, TypeEnvEntry::Int) {
                         return Err(TypeError::new(
                             rhs.1,
-                            Mismatch {
+                            TypeMismatch {
                                 expected: TypeEnvEntry::Int,
                                 found: right_type,
                             },
@@ -136,7 +166,7 @@ fn trans_dec(
                 let mut param_types = Vec::new();
                 value_env.begin_scope();
                 for param in func.params {
-                    let param_type = trans_typ_symbol(type_env, param.typ)?;
+                    let param_type = type_env_lookup(type_env, param.typ)?;
                     param_types.push(param_type.clone());
                     value_env.enter(param.name, ValueEnvEntry::Var(param_type));
                 }
@@ -144,29 +174,29 @@ fn trans_dec(
                 value_env.end_scope();
 
                 if let Some(return_type_symbol) = func.result {
-                    let return_type = trans_typ_symbol(type_env, return_type_symbol)?;
+                    let return_type = type_env_lookup(type_env, return_type_symbol)?;
                     if return_type != return_exp.1 {
                         return Err(TypeError {
                             span: func.body.1,
-                            kind: TypeErrorKind::Mismatch {
+                            kind: TypeErrorKind::TypeMismatch {
                                 expected: return_type,
                                 found: return_exp.1,
                             },
                         });
                     }
                 }
-                // value_env.enter(func.name, ValueEnvEntry::Fun(param_types, return_exp.1));
+                value_env.enter(func.name, ValueEnvEntry::Fun(param_types, return_exp.1));
             }
             Ok(())
         }
         Dec::Var(symb, type_annotation, exp) => {
             let exp_ty = trans_exp_rec(value_env, type_env, *exp.clone())?;
             if let Some(typ_sym) = type_annotation {
-                let typ = trans_typ_symbol(type_env, typ_sym)?;
+                let typ = type_env_lookup(type_env, typ_sym)?;
                 if typ != exp_ty.1 {
                     return Err(TypeError::new(
                         exp.1,
-                        TypeErrorKind::Mismatch {
+                        TypeErrorKind::TypeMismatch {
                             expected: typ,
                             found: exp_ty.1,
                         },
@@ -182,11 +212,25 @@ fn trans_dec(
     }
 }
 
-fn trans_typ_symbol(
+fn type_env_lookup(
     type_env: &mut SymbolTable<TypeEnvEntry>,
     symbol: Spanned<Symbol>,
 ) -> Result<TypeEnvEntry, TypeError> {
     if let Some(typ) = type_env.lookup(&symbol.0) {
+        Ok(typ)
+    } else {
+        Err(TypeError::new(
+            symbol.1,
+            TypeErrorKind::UnknownIdentifier(symbol.0),
+        ))
+    }
+}
+
+fn value_env_lookup(
+    value_env: &mut SymbolTable<ValueEnvEntry>,
+    symbol: Spanned<Symbol>,
+) -> Result<ValueEnvEntry, TypeError> {
+    if let Some(typ) = value_env.lookup(&symbol.0) {
         Ok(typ)
     } else {
         Err(TypeError::new(
@@ -205,9 +249,13 @@ pub struct TypeError {
 #[derive(Debug, Clone)]
 pub enum TypeErrorKind {
     UnknownIdentifier(Symbol),
-    Mismatch {
+    TypeMismatch {
         expected: TypeEnvEntry,
         found: TypeEnvEntry,
+    },
+    ArgCountMismatch {
+        expected: usize,
+        found: usize,
     },
     InvalidIdentifier,
 }

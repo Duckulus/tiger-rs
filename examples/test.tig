@@ -1,7 +1,7 @@
 let
-  var a: string := "wsg"
+  var first: string := "wsg"
   function first(a: int, b: int) : int =
     a
 in
-  first(5, 4)
+  first(5, 5)
 end
