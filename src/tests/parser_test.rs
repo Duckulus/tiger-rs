@@ -1,9 +1,8 @@
 #![allow(unused)]
-use crate::parse::ast::Var::Simple;
 use crate::parse::ast::{
     Dec, EField, Exp, Field, FunDec, Oper, Program, Symbol, TypSymbol, TypeDecl, Var,
 };
-use crate::parse::lexer::{Spanned, Token, lexer};
+use crate::parse::lexer::{lexer, Spanned, Token};
 use crate::parse::parser;
 use chumsky::error::Rich;
 use chumsky::input::Stream;
@@ -13,7 +12,9 @@ use chumsky::{ParseResult, Parser};
 fn remove_spans_var(var: Var) -> Var {
     match var {
         Var::Simple((s, _)) => Var::Simple((s, SimpleSpan::from(0..0))),
-        Var::Field(v, s) => Var::Field(Box::new(remove_spans_var(*v)), s),
+        Var::Field(v, (s, _)) => {
+            Var::Field(Box::new(remove_spans_var(*v)), (s, SimpleSpan::from(0..0)))
+        }
         Var::Subscript(v, e) => {
             Var::Subscript(Box::new(remove_spans_var(*v)), Box::new(remove_spans(*e)))
         }
@@ -85,12 +86,12 @@ fn remove_spans(exp: Spanned<Exp>) -> Spanned<Exp> {
                 Box::new(remove_spans(*lhs)),
                 Box::new(remove_spans(*rhs)),
             ),
-            Exp::Record(typ, fields) => Exp::Record(
-                typ,
+            Exp::Record((typ, _), fields) => Exp::Record(
+                (typ, SimpleSpan::from(0..0)),
                 fields
                     .into_iter()
                     .map(|field| EField {
-                        name: field.name,
+                        name: (field.name.0, SimpleSpan::from(0..0)),
                         value: remove_spans(field.value),
                     })
                     .collect(),
@@ -120,7 +121,11 @@ fn remove_spans(exp: Spanned<Exp>) -> Spanned<Exp> {
                 decs.into_iter().map(remove_spans_dec).collect(),
                 exps.into_iter().map(remove_spans).collect(),
             ),
-            Exp::Array { typ: (typ, _), size, init } => Exp::Array {
+            Exp::Array {
+                typ: (typ, _),
+                size,
+                init,
+            } => Exp::Array {
                 typ: (typ, SimpleSpan::from(0..0)),
                 size: Box::new(remove_spans(*size)),
                 init: Box::new(remove_spans(*init)),
@@ -161,7 +166,10 @@ fn op(op: Oper, e1: Spanned<Exp>, e2: Spanned<Exp>) -> Spanned<Exp> {
 }
 
 fn record(typ: TypSymbol, fields: Vec<EField>) -> Spanned<Exp> {
-    (Exp::Record(typ, fields), SimpleSpan::from(0..0))
+    (
+        Exp::Record((typ, SimpleSpan::from(0..0)), fields),
+        SimpleSpan::from(0..0),
+    )
 }
 
 fn seq(exps: Vec<Spanned<Exp>>) -> Spanned<Exp> {
@@ -258,6 +266,17 @@ fn array_type_decl(name: String) -> TypeDecl {
     TypeDecl::Array((name, SimpleSpan::from(0..0)))
 }
 
+fn efield(name: String, exp: Spanned<Exp>) -> EField {
+    EField {
+        name: (name, SimpleSpan::from(0..0)),
+        value: exp,
+    }
+}
+
+fn field_var(var: Var, field: Symbol) -> Var {
+    Var::field(var, (field, SimpleSpan::from(0..0)))
+}
+
 #[test]
 pub fn test_parser() {
     let parse = move |input: &str| -> ParseResult<Spanned<Exp>, Rich<Token>> {
@@ -275,7 +294,7 @@ pub fn test_parser() {
     assert_eq!(var(simple_var("foo".to_string())), parse_unwrap("foo"));
     assert_eq!(var(simple_var("foo".to_string())), parse_unwrap("(foo)"));
     assert_eq!(
-        var(Var::field(simple_var("foo".to_string()), "bar".to_string())),
+        var(field_var(simple_var("foo".to_string()), "bar".to_string())),
         parse_unwrap("foo.bar")
     );
     assert_eq!(
@@ -284,7 +303,7 @@ pub fn test_parser() {
     );
     assert_eq!(
         var(Var::subscript(
-            Var::field(simple_var("foo".to_string()), "bar".to_string()),
+            field_var(simple_var("foo".to_string()), "bar".to_string()),
             int(42)
         )),
         parse_unwrap("foo.bar[42]")
@@ -360,14 +379,8 @@ pub fn test_parser() {
         record(
             "foo".to_string(),
             vec![
-                EField {
-                    name: "a".to_string(),
-                    value: int(1)
-                },
-                EField {
-                    name: "b".to_string(),
-                    value: int(2)
-                }
+                efield("a".to_string(), int(1)),
+                efield("b".to_string(), int(2))
             ]
         ),
         parse_unwrap("foo{a=1,b=2}")
@@ -378,14 +391,8 @@ pub fn test_parser() {
             record(
                 "bar".to_string(),
                 vec![
-                    EField {
-                        name: "a".to_string(),
-                        value: int(1)
-                    },
-                    EField {
-                        name: "b".to_string(),
-                        value: int(2)
-                    }
+                    efield("a".to_string(), int(1)),
+                    efield("b".to_string(), int(2))
                 ]
             )
         ),

@@ -11,7 +11,7 @@ pub type Program = Exp;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Var {
     Simple(Spanned<Symbol>),
-    Field(Box<Var>, Symbol),
+    Field(Box<Var>, Spanned<Symbol>),
     Subscript(Box<Var>, Box<Spanned<Exp>>),
 }
 
@@ -19,7 +19,7 @@ impl Var {
     pub fn simple(name: Spanned<Symbol>) -> Self {
         Var::Simple(name)
     }
-    pub fn field(var: Var, name: Symbol) -> Self {
+    pub fn field(var: Var, name: Spanned<Symbol>) -> Self {
         Var::Field(Box::new(var), name)
     }
     pub fn subscript(var: Var, exp: Spanned<Exp>) -> Self {
@@ -39,7 +39,7 @@ pub enum Oper {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EField {
-    pub name: Symbol,
+    pub name: Spanned<Symbol>,
     pub value: Spanned<Exp>,
 }
 
@@ -57,7 +57,7 @@ pub enum Exp {
     String(String),
     Call(Spanned<Symbol>, Vec<Spanned<Exp>>),
     Op(Oper, Box<Spanned<Exp>>, Box<Spanned<Exp>>),
-    Record(TypSymbol, Vec<EField>),
+    Record(Spanned<TypSymbol>, Vec<EField>),
     Seq(Vec<Spanned<Exp>>),
     Assign(Box<Var>, Box<Spanned<Exp>>),
     If {cond: Box<Spanned<Exp>>, then: Box<Spanned<Exp>>, elsee: Option<Box<Spanned<Exp>>>},
@@ -93,7 +93,7 @@ impl Exp {
         Exp::Op(op, Box::new(e1), Box::new(e2))
     }
     
-    pub fn record(typ: TypSymbol, fields: Vec<EField>) -> Self {
+    pub fn record(typ: Spanned<TypSymbol>, fields: Vec<EField>) -> Self {
         Exp::Record(typ, fields)
     }
     

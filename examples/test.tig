@@ -4,9 +4,10 @@ let
     a
   type foo = int
   var lol: foo := 3
-  type human = {name: string, age: foo}
+  type human = { name: string, age: foo }
   type humanity = array of human
-  var earch: humanity := humanity [1] of human {name = "Mark", age = 23}
+  var earth: humanity := humanity [1] of human { name = "Mark", age = 23 }
+  var jim := human { name = "Mark", age = 23 }
 in
-  first(5, lol)
+  nil
 end

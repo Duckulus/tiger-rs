@@ -19,7 +19,7 @@ where
         .map(|s: Spanned<String>| {
             Box::new(move |var: Spanned<Var>| {
                 (
-                    Var::field(var.0, s.clone().0),
+                    Var::field(var.0, s.clone()),
                     SimpleSpan::from(var.1.start..s.1.end),
                 )
             }) as Box<dyn Fn(Spanned<Var>) -> Spanned<Var>>
@@ -229,9 +229,11 @@ where
             .boxed();
 
         let record = select! {Token::ID(s) => s}
+            .map_with(|id, extra| (id, extra.span()))
             .then_ignore(just(Token::LBRACE))
             .then(
                 select! {Token::ID(s) => s}
+                    .map_with(|id, extra| (id, extra.span()))
                     .then_ignore(just(Token::EQ))
                     .then(expr.clone())
                     .map(|(name, value)| EField { name, value })

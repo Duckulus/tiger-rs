@@ -1,8 +1,7 @@
 use crate::parse::ast::{Dec, Exp, Oper, TypeDecl, Var};
 use crate::parse::lexer::{Span, Spanned};
-use crate::semant::env::{base_type_env, base_value_env, Symbol, SymbolTable};
+use crate::semant::env::{Symbol, SymbolTable, base_type_env, base_value_env};
 use crate::semant::types::{Type, ValueEnvEntry};
-use crate::semant::TypeErrorKind::TypeMismatch;
 use chumsky::span::SimpleSpan;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -24,24 +23,10 @@ fn trans_exp_rec(
     exp: Spanned<Exp>,
 ) -> Result<TypedExp, TypeError> {
     match exp.0.clone() {
-        Exp::Var(var) => match *var {
-            Var::Simple(symb) => {
-                let entry = value_env_lookup(value_env, symb)?;
-
-                match entry {
-                    ValueEnvEntry::Var(typ) => Ok((exp, typ)),
-                    ValueEnvEntry::Fun(_, _) => {
-                        Err(TypeError::new(exp.1, TypeErrorKind::InvalidIdentifier))
-                    }
-                }
-            }
-            Var::Field(_, _) => {
-                unimplemented!()
-            }
-            Var::Subscript(_, _) => {
-                unimplemented!()
-            }
-        },
+        Exp::Var(var) => {
+            let typ = trans_var(value_env, type_env, var)?;
+            Ok((exp, typ))
+        }
         Exp::Nil => Ok((exp, Type::Nil)),
         Exp::Int(_) => Ok((exp, Type::Int)),
         Exp::String(_) => Ok((exp, Type::String)),
@@ -80,43 +65,86 @@ fn trans_exp_rec(
                 Err(TypeError::new(fun_name.1, TypeErrorKind::InvalidIdentifier))
             }
         }
-        Exp::Op(op, lhs, rhs) => {
-            match op {
-                Oper::Plus | Oper::Minus | Oper::Times | Oper::Divide => {
-                    let (_, left_type) = trans_exp_rec(value_env, type_env, *lhs.clone())?;
-                    if !matches!(left_type, Type::Int) {
-                        return Err(TypeError::new(
-                            lhs.1,
-                            TypeMismatch {
-                                expected: Type::Int,
-                                found: left_type,
-                            },
-                        ));
-                    }
-                    let (_, right_type) = trans_exp_rec(value_env, type_env, *rhs.clone())?;
-                    if !matches!(right_type, Type::Int) {
-                        return Err(TypeError::new(
-                            rhs.1,
-                            TypeMismatch {
-                                expected: Type::Int,
-                                found: right_type,
-                            },
-                        ));
-                    }
-                    Ok((exp, Type::Int))
+        Exp::Op(op, lhs, rhs) => match op {
+            Oper::Plus
+            | Oper::Minus
+            | Oper::Times
+            | Oper::Divide
+            | Oper::Lt
+            | Oper::Le
+            | Oper::Gt
+            | Oper::Ge => {
+                let (_, left_type) = trans_exp_rec(value_env, type_env, *lhs.clone())?;
+                if !matches!(left_type, Type::Int) {
+                    return Err(TypeError::new(
+                        lhs.1,
+                        TypeErrorKind::TypeMismatch {
+                            expected: Type::Int,
+                            found: left_type,
+                        },
+                    ));
                 }
-                _ => {
-                    unimplemented!()
-                } // Oper::Eq => {}
-                  // Oper::Neq => {}
-                  // Oper::Lt => {}
-                  // Oper::Le => {}
-                  // Oper::Gt => {}
-                  // Oper::Ge => {}
+                let (_, right_type) = trans_exp_rec(value_env, type_env, *rhs.clone())?;
+                if !matches!(right_type, Type::Int) {
+                    return Err(TypeError::new(
+                        rhs.1,
+                        TypeErrorKind::TypeMismatch {
+                            expected: Type::Int,
+                            found: right_type,
+                        },
+                    ));
+                }
+                Ok((exp, Type::Int))
             }
-        }
-        Exp::Record(_, _) => {
-            unimplemented!()
+            Oper::Eq => {
+                unimplemented!()
+            }
+            Oper::Neq => {
+                unimplemented!()
+            }
+        },
+        Exp::Record(typ_symbol, efields) => {
+            let typ_symbol_span = typ_symbol.1.clone();
+            let ty = type_env_lookup(type_env, typ_symbol)?;
+            if let Type::Record(ref fields, _) = ty {
+                let mut fields = fields.clone();
+                for efield in efields {
+                    let exp_span = efield.value.1.clone();
+                    let (_, given_type) = trans_exp_rec(value_env, type_env, efield.value)?;
+                    if let Some(pos) = fields.iter().position(|f| f.0 == efield.name.0) {
+                        let (_, expected_type) = fields.get(pos).unwrap();
+                        if given_type != *expected_type {
+                            return Err(TypeError {
+                                span: exp_span,
+                                kind: TypeErrorKind::TypeMismatch {
+                                    found: given_type,
+                                    expected: expected_type.clone(),
+                                },
+                            });
+                        }
+                        fields.remove(pos);
+                    } else {
+                        return Err(TypeError {
+                            span: efield.name.1,
+                            kind: TypeErrorKind::UnexpectedRecordField(efield.name.0),
+                        });
+                    }
+                }
+                if !fields.is_empty() {
+                    return Err(TypeError {
+                        span: typ_symbol_span,
+                        kind: TypeErrorKind::MissingRecordFields {
+                            missing: fields.iter().map(|f| f.0.clone()).collect(),
+                        },
+                    });
+                }
+                Ok((exp, ty))
+            } else {
+                Err(TypeError {
+                    span: typ_symbol_span,
+                    kind: TypeErrorKind::NotARecordType,
+                })
+            }
         }
         Exp::Seq(_) => {
             unimplemented!()
@@ -180,6 +208,61 @@ fn trans_exp_rec(
                     span: typ_span,
                     kind: TypeErrorKind::NotAnArrayType,
                 })
+            }
+        }
+    }
+}
+
+fn trans_var(
+    value_env: &mut SymbolTable<ValueEnvEntry>,
+    type_env: &mut SymbolTable<Type>,
+    var: Box<Var>,
+) -> Result<Type, TypeError> {
+    match *var {
+        Var::Simple(symb) => {
+            let symb_span = symb.1.clone();
+            let entry = value_env_lookup(value_env, symb)?;
+
+            match entry {
+                ValueEnvEntry::Var(typ) => Ok(typ),
+                ValueEnvEntry::Fun(_, _) => {
+                    Err(TypeError::new(symb_span, TypeErrorKind::InvalidIdentifier))
+                }
+            }
+        }
+        Var::Field(var, symb) => {
+            let var_typ = trans_var(value_env, type_env, var)?;
+            if let Type::Record(fields, _) = var_typ {
+                let field = fields.iter().find(|f| f.0 == symb.0);
+                if let Some((_, field_type)) = field {
+                    Ok(field_type.clone())
+                } else {
+                    Err(TypeError::new(
+                        symb.1,
+                        TypeErrorKind::UnexpectedRecordField(symb.0),
+                    ))
+                }
+            } else {
+                Err(TypeError::new(symb.1, TypeErrorKind::UnexpectedFieldAccess))
+            }
+        }
+        Var::Subscript(var, exp) => {
+            let exp_span = exp.1.clone();
+            let (_, index_type) = trans_exp_rec(value_env, type_env, *exp)?;
+            if index_type != Type::Int {
+                return Err(TypeError::new(
+                    exp_span,
+                    TypeErrorKind::TypeMismatch {
+                        expected: Type::Int,
+                        found: index_type,
+                    },
+                ));
+            }
+            let var_typ = trans_var(value_env, type_env, var)?;
+            if let Type::Array(elem_type, _) = var_typ {
+                Ok(*elem_type)
+            } else {
+                Err(TypeError::new(exp_span, TypeErrorKind::UnexpectedSubscript))
             }
         }
     }
@@ -310,6 +393,11 @@ pub enum TypeErrorKind {
     ArgCountMismatch { expected: usize, found: usize },
     InvalidIdentifier,
     NotAnArrayType,
+    NotARecordType,
+    MissingRecordFields { missing: Vec<Symbol> },
+    UnexpectedRecordField(Symbol),
+    UnexpectedFieldAccess,
+    UnexpectedSubscript,
 }
 
 impl TypeError {
