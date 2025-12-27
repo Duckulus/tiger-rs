@@ -150,11 +150,11 @@ where
             .boxed();
 
         let unary = just(Token::MINUS)
-            .ignored()
+            .map_with(|op, extra| (Oper::Minus, extra.span()))
             .repeated()
-            .foldr_with(atom, |_, exp, e| {
+            .foldr_with(atom, |op, exp, e| {
                 (
-                    Exp::op(Oper::Minus, (Exp::int(0), SimpleSpan::from(0..0)), exp),
+                    Exp::op(op, (Exp::int(0), SimpleSpan::from(0..0)), exp),
                     e.span(),
                 )
             })
@@ -164,8 +164,8 @@ where
             .clone()
             .foldl_with(
                 choice((
-                    just(Token::TIMES).map(|_| Oper::Times),
-                    just(Token::DIVIDE).map(|_| Oper::Divide),
+                    just(Token::TIMES).map_with(|_,extra| (Oper::Times, extra.span())),
+                    just(Token::DIVIDE).map_with(|_, extra| (Oper::Divide, extra.span())),
                 ))
                 .then(unary)
                 .repeated(),
@@ -177,8 +177,8 @@ where
             .clone()
             .foldl_with(
                 choice((
-                    just(Token::PLUS).map(|_| Oper::Plus),
-                    just(Token::MINUS).map(|_| Oper::Minus),
+                    just(Token::PLUS).map_with(|_,extra| (Oper::Plus, extra.span())),
+                    just(Token::MINUS).map_with(|_, extra| (Oper::Minus, extra.span())),
                 ))
                 .then(product)
                 .repeated(),
@@ -189,12 +189,12 @@ where
         let comparison = sum
             .clone()
             .then(choice((
-                just(Token::EQ).to(Oper::Eq),
-                just(Token::NEQ).to(Oper::Neq),
-                just(Token::GT).to(Oper::Gt),
-                just(Token::GE).to(Oper::Ge),
-                just(Token::LT).to(Oper::Lt),
-                just(Token::LE).to(Oper::Le),
+                just(Token::EQ).map_with(|_,extra| (Oper::Eq, extra.span())),
+                just(Token::NEQ).map_with(|_,extra| (Oper::Neq, extra.span())),
+                just(Token::GT).map_with(|_,extra| (Oper::Gt, extra.span())),
+                just(Token::GE).map_with(|_,extra| (Oper::Ge, extra.span())),
+                just(Token::LT).map_with(|_,extra| (Oper::Lt, extra.span())),
+                just(Token::LE).map_with(|_,extra| (Oper::Le, extra.span())),
             )))
             .then(sum.clone())
             .map_with(|((lhs, op), rhs), e| (Exp::op(op, lhs, rhs), e.span()))

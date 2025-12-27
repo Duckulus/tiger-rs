@@ -65,44 +65,65 @@ fn trans_exp_rec(
                 Err(TypeError::new(fun_name.1, TypeErrorKind::InvalidIdentifier))
             }
         }
-        Exp::Op(op, lhs, rhs) => match op {
-            Oper::Plus
-            | Oper::Minus
-            | Oper::Times
-            | Oper::Divide
-            | Oper::Lt
-            | Oper::Le
-            | Oper::Gt
-            | Oper::Ge => {
-                let (_, left_type) = trans_exp_rec(value_env, type_env, *lhs.clone())?;
-                if !matches!(left_type, Type::Int) {
-                    return Err(TypeError::new(
-                        lhs.1,
-                        TypeErrorKind::TypeMismatch {
-                            expected: Type::Int,
-                            found: left_type,
-                        },
-                    ));
+        Exp::Op(op, lhs, rhs) => {
+            let (_, left_type) = trans_exp_rec(value_env, type_env, *lhs.clone())?;
+            let (right_exp, right_type) = trans_exp_rec(value_env, type_env, *rhs.clone())?;
+            match op.0 {
+                Oper::Plus | Oper::Minus | Oper::Times | Oper::Divide => {
+                    if !matches!(left_type, Type::Int) {
+                        return Err(TypeError::new(
+                            lhs.1,
+                            TypeErrorKind::TypeMismatch {
+                                expected: Type::Int,
+                                found: left_type,
+                            },
+                        ));
+                    }
+                    if !matches!(right_type, Type::Int) {
+                        return Err(TypeError::new(
+                            rhs.1,
+                            TypeErrorKind::TypeMismatch {
+                                expected: Type::Int,
+                                found: right_type,
+                            },
+                        ));
+                    }
+                    Ok((exp, Type::Int))
                 }
-                let (_, right_type) = trans_exp_rec(value_env, type_env, *rhs.clone())?;
-                if !matches!(right_type, Type::Int) {
-                    return Err(TypeError::new(
-                        rhs.1,
-                        TypeErrorKind::TypeMismatch {
-                            expected: Type::Int,
-                            found: right_type,
-                        },
-                    ));
-                }
-                Ok((exp, Type::Int))
+                Oper::Lt | Oper::Le | Oper::Gt | Oper::Ge => match left_type {
+                    Type::Int | Type::String => {
+                        if right_type == left_type {
+                            Ok((exp, Type::Int))
+                        } else {
+                            Err(TypeError::new(
+                                right_exp.1,
+                                TypeErrorKind::TypeMismatch {
+                                    expected: left_type,
+                                    found: right_type,
+                                },
+                            ))
+                        }
+                    }
+                    _ => Err(TypeError::new(op.1, TypeErrorKind::InvalidOperator)),
+                },
+                Oper::Eq | Oper::Neq => match left_type {
+                    Type::Int | Type::String | Type::Record(_, _) | Type::Array(_, _) => {
+                        if right_type == left_type {
+                            Ok((exp, Type::Int))
+                        } else {
+                            Err(TypeError::new(
+                                right_exp.1,
+                                TypeErrorKind::TypeMismatch {
+                                    expected: left_type,
+                                    found: right_type,
+                                },
+                            ))
+                        }
+                    }
+                    _ => Err(TypeError::new(op.1, TypeErrorKind::InvalidOperator)),
+                },
             }
-            Oper::Eq => {
-                unimplemented!()
-            }
-            Oper::Neq => {
-                unimplemented!()
-            }
-        },
+        }
         Exp::Record(typ_symbol, efields) => {
             let typ_symbol_span = typ_symbol.1.clone();
             let ty = type_env_lookup(type_env, typ_symbol)?;
@@ -398,6 +419,7 @@ pub enum TypeErrorKind {
     UnexpectedRecordField(Symbol),
     UnexpectedFieldAccess,
     UnexpectedSubscript,
+    InvalidOperator,
 }
 
 impl TypeError {

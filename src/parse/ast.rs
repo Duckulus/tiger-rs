@@ -56,7 +56,7 @@ pub enum Exp {
     Int(i32),
     String(String),
     Call(Spanned<Symbol>, Vec<Spanned<Exp>>),
-    Op(Oper, Box<Spanned<Exp>>, Box<Spanned<Exp>>),
+    Op(Spanned<Oper>, Box<Spanned<Exp>>, Box<Spanned<Exp>>),
     Record(Spanned<TypSymbol>, Vec<EField>),
     Seq(Vec<Spanned<Exp>>),
     Assign(Box<Var>, Box<Spanned<Exp>>),
@@ -89,7 +89,7 @@ impl Exp {
         Exp::Call(name, args)
     }
     
-    pub fn op(op: Oper, e1: Spanned<Exp>, e2: Spanned<Exp>) -> Self {
+    pub fn op(op: Spanned<Oper>, e1: Spanned<Exp>, e2: Spanned<Exp>) -> Self {
         Exp::Op(op, Box::new(e1), Box::new(e2))
     }
     

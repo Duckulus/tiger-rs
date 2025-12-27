@@ -81,8 +81,8 @@ fn remove_spans(exp: Spanned<Exp>) -> Spanned<Exp> {
                 (symb, SimpleSpan::from(0..0)),
                 args.into_iter().map(|e| remove_spans(e)).collect(),
             ),
-            Exp::Op(op, lhs, rhs) => Exp::Op(
-                op,
+            Exp::Op((op, _), lhs, rhs) => Exp::Op(
+                (op, SimpleSpan::from(0..0)),
                 Box::new(remove_spans(*lhs)),
                 Box::new(remove_spans(*rhs)),
             ),
@@ -160,7 +160,7 @@ fn call(name: Symbol, args: Vec<Spanned<Exp>>) -> Spanned<Exp> {
 
 fn op(op: Oper, e1: Spanned<Exp>, e2: Spanned<Exp>) -> Spanned<Exp> {
     (
-        Exp::Op(op, Box::new(e1), Box::new(e2)),
+        Exp::Op((op, SimpleSpan::from(0..0)), Box::new(e1), Box::new(e2)),
         SimpleSpan::from(0..0),
     )
 }
