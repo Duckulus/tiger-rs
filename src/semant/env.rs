@@ -1,4 +1,4 @@
-use crate::semant::types::{TypeEnvEntry, ValueEnvEntry};
+use crate::semant::types::{Type, ValueEnvEntry};
 use chumsky::container::Container;
 use std::collections::HashMap;
 
@@ -62,11 +62,11 @@ pub fn base_value_env() -> SymbolTable<ValueEnvEntry> {
     table
 }
 
-pub fn base_type_env() -> SymbolTable<TypeEnvEntry> {
+pub fn base_type_env() -> SymbolTable<Type> {
     let mut table = SymbolTable::empty();
-    table.builtins.insert("int".to_string(), TypeEnvEntry::Int);
+    table.builtins.insert("int".to_string(), Type::Int);
     table
         .builtins
-        .insert("string".to_string(), TypeEnvEntry::String);
+        .insert("string".to_string(), Type::String);
     table
 }

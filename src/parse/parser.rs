@@ -1,4 +1,4 @@
-use crate::parse::ast::{Dec, EField, Exp, Field, FunDec, Oper, Type, Var};
+use crate::parse::ast::{Dec, EField, Exp, Field, FunDec, Oper, TypeDecl, Var};
 use crate::parse::lexer::{Span, Spanned, Token};
 use chumsky::input::ValueInput;
 use chumsky::prelude::*;
@@ -65,15 +65,17 @@ where
         .map(|(name, typ)| Field { name, typ })
         .separated_by(just(Token::COMMA))
         .collect();
-    let ty = select! {Token::ID(s) => Type::Name(s)}
+    let ty = select! {Token::ID(s) => s}
+        .map_with(|id, extra| TypeDecl::Name((id, extra.span())))
         .or(typed_fields
             .clone()
             .delimited_by(just(Token::LBRACE), just(Token::RBRACE))
-            .map(Type::Record))
+            .map(TypeDecl::Record))
         .or(just(Token::ARRAY)
             .ignore_then(just(Token::OF))
-            .ignore_then(select! {Token::ID(s) => s})
-            .map(Type::Array))
+            .ignore_then(select! {Token::ID(s) => s}
+                .map_with(|id, extra| (id, extra.span())))
+            .map(TypeDecl::Array))
         .boxed();
     let ty_dec = just(Token::TYPE)
         .ignore_then(select! {Token::ID(s) => s})
@@ -272,6 +274,7 @@ where
             .to(Exp::Break)
             .map_with(|exp, e| (exp, e.span()));
         let array = select! {Token::ID(s) => s}
+            .map_with(|id, extra| (id, extra.span()))
             .then_ignore(just(Token::LBRACK))
             .then(expr.clone())
             .then_ignore(just(Token::RBRACK))

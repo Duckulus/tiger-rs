@@ -1,6 +1,6 @@
 use crate::parse::lexer::lexer;
 use crate::parse::parser;
-use crate::semant::types::TypeEnvEntry;
+use crate::semant::types::Type;
 use crate::semant::{trans_exp, TypeError, TypeErrorKind, TypedExp};
 use chumsky::input::Stream;
 use chumsky::Parser;
@@ -23,17 +23,17 @@ pub fn test_typecheck() {
     };
     let typecheck_unwrap = move |input: &str| -> TypedExp { typecheck(input).unwrap() };
 
-    assert_eq!(typecheck_unwrap("\"hi\"").1, TypeEnvEntry::String);
-    assert_eq!(typecheck_unwrap("42").1, TypeEnvEntry::Int);
-    assert_eq!(typecheck_unwrap("1+1").1, TypeEnvEntry::Int);
-    assert_eq!(typecheck_unwrap("1-1").1, TypeEnvEntry::Int);
+    assert_eq!(typecheck_unwrap("\"hi\"").1, Type::String);
+    assert_eq!(typecheck_unwrap("42").1, Type::Int);
+    assert_eq!(typecheck_unwrap("1+1").1, Type::Int);
+    assert_eq!(typecheck_unwrap("1-1").1, Type::Int);
     assert_eq!(
         typecheck_unwrap("let var a := 5 in a end").1,
-        TypeEnvEntry::Int
+        Type::Int
     );
     assert_eq!(
         typecheck_unwrap("let var a: int := 5 in a end").1,
-        TypeEnvEntry::Int
+        Type::Int
     );
 
     let exp = typecheck("let var a: string:= 5 in a end");
@@ -43,8 +43,8 @@ pub fn test_typecheck() {
             if matches!(
                 e.kind(),
                 TypeErrorKind::TypeMismatch {
-                    found: TypeEnvEntry::Int,
-                    expected: TypeEnvEntry::String,
+                    found: Type::Int,
+                    expected: Type::String,
                 }
             )
     ));

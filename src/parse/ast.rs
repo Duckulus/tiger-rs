@@ -65,7 +65,7 @@ pub enum Exp {
     Break,
     For {var: Symbol, lo: Box<Spanned<Exp>>, hi: Box<Spanned<Exp>>, body: Box<Spanned<Exp>>},
     Let(Vec<Dec>, Vec<Spanned<Exp>>),
-    Array{typ: TypSymbol, size: Box<Spanned<Exp>>, init: Box<Spanned<Exp>>}
+    Array{typ: Spanned<TypSymbol>, size: Box<Spanned<Exp>>, init: Box<Spanned<Exp>>}
 }
 
 impl Exp {
@@ -125,7 +125,7 @@ impl Exp {
         Exp::Let(decs, body)
     }
     
-    pub fn array(typ: TypSymbol, size: Spanned<Exp>, init: Spanned<Exp>) -> Self {
+    pub fn array(typ: Spanned<TypSymbol>, size: Spanned<Exp>, init: Spanned<Exp>) -> Self {
         Exp::Array{typ, size: Box::new(size), init: Box::new(init)}
     }
 }
@@ -140,7 +140,7 @@ pub struct FunDec {
 }
 
 
-pub type NamedType = (TypSymbol, Type);
+pub type NamedType = (TypSymbol, TypeDecl);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dec {
@@ -164,8 +164,8 @@ impl Dec {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Type {
-    Name(TypSymbol),
+pub enum TypeDecl {
+    Name(Spanned<TypSymbol>),
     Record(Vec<Field>),
-    Array(TypSymbol),
+    Array(Spanned<TypSymbol>),
 }

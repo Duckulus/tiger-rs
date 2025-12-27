@@ -1,7 +1,7 @@
 #![allow(unused)]
 use crate::parse::ast::Var::Simple;
 use crate::parse::ast::{
-    Dec, EField, Exp, Field, FunDec, Oper, Program, Symbol, TypSymbol, Type, Var,
+    Dec, EField, Exp, Field, FunDec, Oper, Program, Symbol, TypSymbol, TypeDecl, Var,
 };
 use crate::parse::lexer::{Spanned, Token, lexer};
 use crate::parse::parser;
@@ -41,11 +41,16 @@ fn remove_spans_dec(dec: Dec) -> Dec {
             types
                 .into_iter()
                 .map(|named_type| match named_type.1 {
-                    Type::Name(_) => named_type,
-                    Type::Record(fields) => {
-                        (named_type.0, Type::Record(remove_spans_fields(fields)))
+                    TypeDecl::Name((symb, _)) => {
+                        (named_type.0, TypeDecl::Name((symb, SimpleSpan::from(0..0))))
                     }
-                    Type::Array(_) => named_type,
+                    TypeDecl::Record(fields) => {
+                        (named_type.0, TypeDecl::Record(remove_spans_fields(fields)))
+                    }
+                    TypeDecl::Array((symb, _)) => (
+                        named_type.0,
+                        TypeDecl::Array((symb, SimpleSpan::from(0..0))),
+                    ),
                 })
                 .collect::<Vec<_>>(),
         ),
@@ -115,8 +120,8 @@ fn remove_spans(exp: Spanned<Exp>) -> Spanned<Exp> {
                 decs.into_iter().map(remove_spans_dec).collect(),
                 exps.into_iter().map(remove_spans).collect(),
             ),
-            Exp::Array { typ, size, init } => Exp::Array {
-                typ,
+            Exp::Array { typ: (typ, _), size, init } => Exp::Array {
+                typ: (typ, SimpleSpan::from(0..0)),
                 size: Box::new(remove_spans(*size)),
                 init: Box::new(remove_spans(*init)),
             },
@@ -214,7 +219,7 @@ fn lett(decs: Vec<Dec>, body: Vec<Spanned<Exp>>) -> Spanned<Exp> {
 fn array(typ: TypSymbol, size: Spanned<Exp>, init: Spanned<Exp>) -> Spanned<Exp> {
     (
         Exp::Array {
-            typ,
+            typ: (typ, SimpleSpan::from(0..0)),
             size: Box::new(size),
             init: Box::new(init),
         },
@@ -243,6 +248,14 @@ fn symbol(symb: String) -> Spanned<Symbol> {
 
 fn simple_var(id: String) -> Var {
     Var::simple((id, SimpleSpan::from(0..0)))
+}
+
+fn name_type_decl(name: String) -> TypeDecl {
+    TypeDecl::Name((name, SimpleSpan::from(0..0)))
+}
+
+fn array_type_decl(name: String) -> TypeDecl {
+    TypeDecl::Array((name, SimpleSpan::from(0..0)))
 }
 
 #[test]
@@ -416,11 +429,11 @@ pub fn test_parser() {
     assert_eq!(
         lett(
             vec![Dec::Type(vec![
-                ("foo".to_string(), Type::Name("int".to_string())),
-                ("bar".to_string(), Type::Array("int".to_string())),
+                ("foo".to_string(), name_type_decl("int".to_string())),
+                ("bar".to_string(), array_type_decl("int".to_string())),
                 (
                     "baz".to_string(),
-                    Type::Record(vec![
+                    TypeDecl::Record(vec![
                         field("a".to_string(), "int".to_string()),
                         field("b".to_string(), "int".to_string())
                     ])

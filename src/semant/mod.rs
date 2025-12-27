@@ -1,15 +1,16 @@
-use crate::parse::ast::{Dec, Exp, Oper, Var};
+use crate::parse::ast::{Dec, Exp, Oper, TypeDecl, Var};
 use crate::parse::lexer::{Span, Spanned};
 use crate::semant::env::{base_type_env, base_value_env, Symbol, SymbolTable};
-use crate::semant::types::{TypeEnvEntry, ValueEnvEntry};
+use crate::semant::types::{Type, ValueEnvEntry};
 use crate::semant::TypeErrorKind::TypeMismatch;
 use chumsky::span::SimpleSpan;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 pub mod env;
 
 pub mod types;
 
-pub type TypedExp = (Spanned<Exp>, TypeEnvEntry);
+pub type TypedExp = (Spanned<Exp>, Type);
 
 pub fn trans_exp(exp: Spanned<Exp>) -> Result<TypedExp, TypeError> {
     let mut value_env = base_value_env();
@@ -19,7 +20,7 @@ pub fn trans_exp(exp: Spanned<Exp>) -> Result<TypedExp, TypeError> {
 
 fn trans_exp_rec(
     value_env: &mut SymbolTable<ValueEnvEntry>,
-    type_env: &mut SymbolTable<TypeEnvEntry>,
+    type_env: &mut SymbolTable<Type>,
     exp: Spanned<Exp>,
 ) -> Result<TypedExp, TypeError> {
     match exp.0.clone() {
@@ -41,9 +42,9 @@ fn trans_exp_rec(
                 unimplemented!()
             }
         },
-        Exp::Nil => Ok((exp, TypeEnvEntry::Nil)),
-        Exp::Int(_) => Ok((exp, TypeEnvEntry::Int)),
-        Exp::String(_) => Ok((exp, TypeEnvEntry::String)),
+        Exp::Nil => Ok((exp, Type::Nil)),
+        Exp::Int(_) => Ok((exp, Type::Int)),
+        Exp::String(_) => Ok((exp, Type::String)),
         Exp::Call(fun_name, args) => {
             let fun_type = value_env_lookup(value_env, fun_name.clone())?;
             if let ValueEnvEntry::Fun(arg_types, return_type) = fun_type {
@@ -83,26 +84,26 @@ fn trans_exp_rec(
             match op {
                 Oper::Plus | Oper::Minus | Oper::Times | Oper::Divide => {
                     let (_, left_type) = trans_exp_rec(value_env, type_env, *lhs.clone())?;
-                    if !matches!(left_type, TypeEnvEntry::Int) {
+                    if !matches!(left_type, Type::Int) {
                         return Err(TypeError::new(
                             lhs.1,
                             TypeMismatch {
-                                expected: TypeEnvEntry::Int,
+                                expected: Type::Int,
                                 found: left_type,
                             },
                         ));
                     }
                     let (_, right_type) = trans_exp_rec(value_env, type_env, *rhs.clone())?;
-                    if !matches!(right_type, TypeEnvEntry::Int) {
+                    if !matches!(right_type, Type::Int) {
                         return Err(TypeError::new(
                             rhs.1,
                             TypeMismatch {
-                                expected: TypeEnvEntry::Int,
+                                expected: Type::Int,
                                 found: right_type,
                             },
                         ));
                     }
-                    Ok((exp, TypeEnvEntry::Int))
+                    Ok((exp, Type::Int))
                 }
                 _ => {
                     unimplemented!()
@@ -149,15 +150,44 @@ fn trans_exp_rec(
             value_env.end_scope();
             Ok((exp, last.unwrap().1))
         }
-        Exp::Array { .. } => {
-            unimplemented!()
+        Exp::Array { typ, size, init } => {
+            let typ_span = typ.1.clone();
+            let ty = type_env_lookup(type_env, typ)?;
+            if let Type::Array(ref elem_type, _) = ty {
+                let (_, size_type) = trans_exp_rec(value_env, type_env, *size.clone())?;
+                if size_type != Type::Int {
+                    return Err(TypeError {
+                        span: size.1,
+                        kind: TypeErrorKind::TypeMismatch {
+                            expected: Type::Int,
+                            found: size_type,
+                        },
+                    });
+                }
+                let (_, init_type) = trans_exp_rec(value_env, type_env, *init.clone())?;
+                if init_type != **elem_type {
+                    return Err(TypeError {
+                        span: init.1,
+                        kind: TypeErrorKind::TypeMismatch {
+                            expected: *elem_type.clone(),
+                            found: init_type,
+                        },
+                    });
+                }
+                Ok((exp, ty))
+            } else {
+                Err(TypeError {
+                    span: typ_span,
+                    kind: TypeErrorKind::NotAnArrayType,
+                })
+            }
         }
     }
 }
 
 fn trans_dec(
     value_env: &mut SymbolTable<ValueEnvEntry>,
-    type_env: &mut SymbolTable<TypeEnvEntry>,
+    type_env: &mut SymbolTable<Type>,
     dec: Dec,
 ) -> Result<(), TypeError> {
     match dec {
@@ -206,16 +236,43 @@ fn trans_dec(
             value_env.enter(symb.0, ValueEnvEntry::Var(exp_ty.1.clone()));
             Ok(())
         }
-        Dec::Type(_) => {
-            unimplemented!()
+        Dec::Type(named_types) => {
+            for (name, type_decl) in named_types {
+                let typ = trans_type_decl(type_env, type_decl)?;
+                type_env.enter(name, typ)
+            }
+            Ok(())
+        }
+    }
+}
+
+fn trans_type_decl(
+    type_env: &mut SymbolTable<Type>,
+    type_decl: TypeDecl,
+) -> Result<Type, TypeError> {
+    match type_decl {
+        TypeDecl::Name(name) => type_env_lookup(type_env, name),
+        TypeDecl::Record(fields) => Ok(Type::Record(
+            fields
+                .into_iter()
+                .map(|field| {
+                    let ty = type_env_lookup(type_env, field.typ)?;
+                    Ok((field.name, ty))
+                })
+                .collect::<Result<Vec<_>, TypeError>>()?,
+            next_type_id(),
+        )),
+        TypeDecl::Array(typ) => {
+            let ty = type_env_lookup(type_env, typ)?;
+            Ok(Type::Array(Box::from(ty), next_type_id()))
         }
     }
 }
 
 fn type_env_lookup(
-    type_env: &mut SymbolTable<TypeEnvEntry>,
+    type_env: &mut SymbolTable<Type>,
     symbol: Spanned<Symbol>,
-) -> Result<TypeEnvEntry, TypeError> {
+) -> Result<Type, TypeError> {
     if let Some(typ) = type_env.lookup(&symbol.0) {
         Ok(typ)
     } else {
@@ -249,15 +306,10 @@ pub struct TypeError {
 #[derive(Debug, Clone)]
 pub enum TypeErrorKind {
     UnknownIdentifier(Symbol),
-    TypeMismatch {
-        expected: TypeEnvEntry,
-        found: TypeEnvEntry,
-    },
-    ArgCountMismatch {
-        expected: usize,
-        found: usize,
-    },
+    TypeMismatch { expected: Type, found: Type },
+    ArgCountMismatch { expected: usize, found: usize },
     InvalidIdentifier,
+    NotAnArrayType,
 }
 
 impl TypeError {
@@ -272,4 +324,9 @@ impl TypeError {
     pub fn kind(&self) -> TypeErrorKind {
         self.kind.clone()
     }
+}
+
+static CURRENT_TYPE_ID: AtomicU32 = AtomicU32::new(0);
+fn next_type_id() -> u32 {
+    CURRENT_TYPE_ID.fetch_add(1, Ordering::SeqCst)
 }
