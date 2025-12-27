@@ -48,5 +48,7 @@ pub fn test_typecheck() {
                 }
             )
     ));
-    
+
+    assert_eq!(typecheck_unwrap("let var foo := 0 in for x := 5 to 27 do foo := foo + x end").1, Type::Void);
+
 }

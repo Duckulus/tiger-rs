@@ -167,23 +167,73 @@ fn trans_exp_rec(
                 })
             }
         }
-        Exp::Seq(_) => {
-            unimplemented!()
+        Exp::Seq(exps) => {
+            let (_, ty) = trans_exp_rec(value_env, type_env, exps.last().unwrap().clone())?;
+            Ok((exp, ty))
         }
-        Exp::Assign(_, _) => {
-            unimplemented!()
+        Exp::Assign(var, exp) => {
+            let var_ty = trans_var(value_env, type_env,var)?;
+            check_type(value_env, type_env, var_ty, exp.clone())?;
+            Ok((*exp, Type::Void))
+        },
+        Exp::If { cond, then, elsee } => {
+            let cond_span = cond.1;
+            let (_, cond_type) = trans_exp_rec(value_env, type_env, *cond)?;
+            if !matches!(cond_type, Type::Int) {
+                return Err(TypeError {
+                    span: cond_span,
+                    kind: TypeErrorKind::TypeMismatch {
+                        expected: Type::Int,
+                        found: cond_type,
+                    },
+                });
+            }
+            let then_span = then.1;
+            let (_, then_type) = trans_exp_rec(value_env, type_env, *then)?;
+            if let Some(elsee) = elsee {
+                let else_span = elsee.1;
+                let (_, else_type) = trans_exp_rec(value_env, type_env, *elsee)?;
+                if then_type != else_type {
+                    Err(TypeError {
+                        span: else_span,
+                        kind: TypeErrorKind::TypeMismatch {
+                            expected: then_type,
+                            found: else_type,
+                        },
+                    })
+                } else {
+                    Ok((exp, then_type))
+                }
+            } else {
+                if !matches!(then_type, Type::Void) {
+                    Err(TypeError {
+                        span: then_span,
+                        kind: TypeErrorKind::TypeMismatch {
+                            expected: Type::Void,
+                            found: then_type,
+                        },
+                    })
+                } else {
+                    Ok((exp, then_type))
+                }
+            }
         }
-        Exp::If { .. } => {
-            unimplemented!()
+        Exp::While { cond, body } => {
+            check_type(value_env, type_env, Type::Int, cond)?;
+            check_type(value_env, type_env, Type::Void, body)?;
+            Ok((exp, Type::Void))
         }
-        Exp::While { .. } => {
-            unimplemented!()
-        }
-        Exp::Break => {
-            unimplemented!()
-        }
-        Exp::For { .. } => {
-            unimplemented!()
+        Exp::Break => Ok((exp, Type::Void)),
+        Exp::For { var, lo, hi, body } => {
+            check_type(value_env, type_env, Type::Int, lo)?;
+            check_type(value_env, type_env, Type::Int, hi)?;
+
+            value_env.begin_scope();
+            value_env.enter(var, ValueEnvEntry::Var(Type::Int));
+            check_type(value_env, type_env, Type::Void, body)?;
+            value_env.end_scope();
+
+            Ok((exp, Type::Void))
         }
         Exp::Let(decs, exps) => {
             value_env.begin_scope();
@@ -347,6 +397,27 @@ fn trans_dec(
             }
             Ok(())
         }
+    }
+}
+
+fn check_type(
+    value_env: &mut SymbolTable<ValueEnvEntry>,
+    type_env: &mut SymbolTable<Type>,
+    expected_type: Type,
+    exp: Box<Spanned<Exp>>,
+) -> Result<(), TypeError> {
+    let span = exp.1;
+    let (_, typ) = trans_exp_rec(value_env, type_env, *exp)?;
+    if typ != expected_type {
+        Err(TypeError {
+            span,
+            kind: TypeErrorKind::TypeMismatch {
+                expected: expected_type,
+                found: typ,
+            },
+        })
+    } else {
+        Ok(())
     }
 }
 

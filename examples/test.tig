@@ -11,5 +11,5 @@ let
   var jim := human { name = "Mark", age = 23 }
   var james := alien{ name = "Mark", age = 23 }
 in
- 5 > 5
+  for x := 5 to 27 do lol := lol + x
 end
