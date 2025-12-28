@@ -72,6 +72,6 @@ pub fn base_type_env() -> TypeEnv {
         .insert("int".to_string(), Rc::new(RefCell::new(Type::Int)));
     table
         .builtins
-        .insert("string".to_string(), Rc::new(RefCell::new(Type::Int)));
+        .insert("string".to_string(), Rc::new(RefCell::new(Type::String)));
     table
 }

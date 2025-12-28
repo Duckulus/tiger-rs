@@ -1,7 +1,5 @@
 #![allow(unused)]
-use crate::parse::ast::{
-    Dec, EField, Exp, Field, FunDec, Oper, Program, Symbol, TypSymbol, TypeDecl, Var,
-};
+use crate::parse::ast::{Dec, EField, Exp, Field, FunDec, NamedType, Oper, Program, Symbol, TypSymbol, TypeDecl, Var};
 use crate::parse::lexer::{lexer, Spanned, Token};
 use crate::parse::parser;
 use chumsky::error::Rich;
@@ -41,15 +39,15 @@ fn remove_spans_dec(dec: Dec) -> Dec {
         Dec::Type(types) => Dec::Type(
             types
                 .into_iter()
-                .map(|named_type| match named_type.1 {
+                .map(|((name, _), typ)| match typ {
                     TypeDecl::Name((symb, _)) => {
-                        (named_type.0, TypeDecl::Name((symb, SimpleSpan::from(0..0))))
+                        ((name, SimpleSpan::from(0..0)), TypeDecl::Name((symb, SimpleSpan::from(0..0))))
                     }
                     TypeDecl::Record(fields) => {
-                        (named_type.0, TypeDecl::Record(remove_spans_fields(fields)))
+                        ((name, SimpleSpan::from(0..0)), TypeDecl::Record(remove_spans_fields(fields)))
                     }
                     TypeDecl::Array((symb, _)) => (
-                        named_type.0,
+                        (name, SimpleSpan::from(0..0)),
                         TypeDecl::Array((symb, SimpleSpan::from(0..0))),
                     ),
                 })
@@ -277,6 +275,10 @@ fn field_var(var: Var, field: Symbol) -> Var {
     Var::field(var, (field, SimpleSpan::from(0..0)))
 }
 
+fn named_type(name: String, field: TypeDecl) -> NamedType {
+    ((name, SimpleSpan::from(0..0)), field)
+}
+
 #[test]
 pub fn test_parser() {
     let parse = move |input: &str| -> ParseResult<Spanned<Exp>, Rich<Token>> {
@@ -436,9 +438,9 @@ pub fn test_parser() {
     assert_eq!(
         lett(
             vec![Dec::Type(vec![
-                ("foo".to_string(), name_type_decl("int".to_string())),
-                ("bar".to_string(), array_type_decl("int".to_string())),
-                (
+                named_type("foo".to_string(), name_type_decl("int".to_string())),
+                named_type("bar".to_string(), array_type_decl("int".to_string())),
+                named_type(
                     "baz".to_string(),
                     TypeDecl::Record(vec![
                         field("a".to_string(), "int".to_string()),

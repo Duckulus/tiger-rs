@@ -1,8 +1,1 @@
-let
-  type a = b
-  type b = c
-  type c = int
-  var x : a := 42
-in
- x
-end
+if 1 then ()
