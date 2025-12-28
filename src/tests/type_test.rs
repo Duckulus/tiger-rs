@@ -83,7 +83,7 @@ fn test_records_validation() {
     match check_err(code_missing) {
         TypeErrorKind::MissingRecordFields { missing } => {
             assert!(missing.contains(&("y".to_string()))); // Assuming Symbol wraps String
-        },
+        }
         _ => panic!("Expected MissingRecordFields"),
     }
 
@@ -97,7 +97,7 @@ fn test_records_validation() {
     match check_err(code_extra) {
         TypeErrorKind::UnexpectedRecordField(sym) => {
             assert_eq!(sym, "z");
-        },
+        }
         _ => panic!("Expected UnexpectedRecordField"),
     }
 
@@ -275,5 +275,27 @@ fn test_recursive_types_and_cycles() {
     match check_err(long_cycle) {
         TypeErrorKind::IllegalCycle => (), // Pass
         e => panic!("Expected IllegalCycle, got {:?}", e),
+    }
+}
+
+#[test]
+fn test_break() {
+    match check_err("break") {
+        TypeErrorKind::BreakOutsideLoop => (),
+        _ => panic!("Expected BreakOutsideLoop"),
+    }
+
+    assert_eq!(check_ok("while 1 do break"), Type::Void);
+    assert_eq!(check_ok("while 1 do if 1 > 2 then break"), Type::Void);
+
+    match check_err(
+        "while 1 do
+  let var a := 0
+      function f () =
+        break
+  in a := 1 end",
+    ) {
+        TypeErrorKind::BreakOutsideLoop => (),
+        _ => panic!("Expected BreakOutsideLoop"),
     }
 }

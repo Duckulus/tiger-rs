@@ -62,7 +62,7 @@ pub enum Exp {
     Assign(Box<Var>, Box<Spanned<Exp>>),
     If {cond: Box<Spanned<Exp>>, then: Box<Spanned<Exp>>, elsee: Option<Box<Spanned<Exp>>>},
     While {cond: Box<Spanned<Exp>>, body: Box<Spanned<Exp>>},
-    Break,
+    Break(Span),
     For {var: Symbol, lo: Box<Spanned<Exp>>, hi: Box<Spanned<Exp>>, body: Box<Spanned<Exp>>},
     Let(Vec<Dec>, Vec<Spanned<Exp>>),
     Array{typ: Spanned<TypSymbol>, size: Box<Spanned<Exp>>, init: Box<Spanned<Exp>>}
@@ -113,8 +113,8 @@ impl Exp {
         Exp::While {cond: Box::new(cond), body: Box::new(body)}
     }
     
-    pub fn breakk() -> Self {
-        Exp::Break
+    pub fn breakk(span: Span) -> Self {
+        Exp::Break(span)
     }
     
     pub fn forr(var: Symbol, lo: Spanned<Exp>, hi: Spanned<Exp>, body: Spanned<Exp>) -> Self {

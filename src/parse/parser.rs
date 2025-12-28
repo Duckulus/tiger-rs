@@ -275,7 +275,7 @@ where
             .map_with(|(((s, lo), hi), body), e| (Exp::forr(s, lo, hi, body), e.span()))
             .boxed();
         let breakk = just(Token::BREAK)
-            .to(Exp::Break)
+            .map_with(|_, extra| Exp::Break(extra.span()))
             .map_with(|exp, e| (exp, e.span()));
         let array = select! {Token::ID(s) => s}
             .map_with(|id, extra| (id, extra.span()))

@@ -108,7 +108,7 @@ fn remove_spans(exp: Spanned<Exp>) -> Spanned<Exp> {
                 cond: Box::new(remove_spans(*cond)),
                 body: Box::new(remove_spans(*body)),
             },
-            Exp::Break => Exp::Break,
+            Exp::Break(_) => Exp::Break(SimpleSpan::from(0..0)),
             Exp::For { var, lo, hi, body } => Exp::For {
                 var,
                 lo: Box::new(remove_spans(*lo)),
@@ -203,7 +203,7 @@ fn whilee(cond: Spanned<Exp>, body: Spanned<Exp>) -> Spanned<Exp> {
 }
 
 fn breakk() -> Spanned<Exp> {
-    (Exp::Break, SimpleSpan::from(0..0))
+    (Exp::Break(SimpleSpan::from(0..0)), SimpleSpan::from(0..0))
 }
 
 fn forr(var: Symbol, lo: Spanned<Exp>, hi: Spanned<Exp>, body: Spanned<Exp>) -> Spanned<Exp> {
