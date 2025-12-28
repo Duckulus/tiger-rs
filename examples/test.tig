@@ -1,15 +1,8 @@
 let
-  var first: string := "wsg"
-  function first(a: int, b: int) : int =
-    a
-  type foo = int
-  var lol: foo := 3
-  type human = { name: string, age: foo }
-  type alien = { name: string, age: foo }
-  type humanity = array of human
-  var earth: humanity := humanity [1] of human { name = "Mark", age = 23 }
-  var jim := human { name = "Mark", age = 23 }
-  var james := alien{ name = "Mark", age = 23 }
+  type a = b
+  type b = c
+  type c = int
+  var x : a := 42
 in
-  for x := 5 to 27 do lol := lol + x
+ x
 end

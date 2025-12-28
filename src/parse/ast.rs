@@ -140,7 +140,7 @@ pub struct FunDec {
 }
 
 
-pub type NamedType = (TypSymbol, TypeDecl);
+pub type NamedType = (Spanned<TypSymbol>, TypeDecl);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dec {

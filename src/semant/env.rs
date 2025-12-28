@@ -1,8 +1,12 @@
-use crate::semant::types::{Type, ValueEnvEntry};
-use chumsky::container::Container;
+use crate::semant::types::{Type, TypeRef, ValueEnvEntry};
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub type Symbol = String;
+
+pub type ValueEnv = SymbolTable<ValueEnvEntry>;
+pub type TypeEnv = SymbolTable<TypeRef>;
 
 pub struct SymbolTable<T> {
     table: HashMap<Symbol, Vec<T>>,
@@ -57,16 +61,17 @@ impl<T: Clone> SymbolTable<T> {
     }
 }
 
-pub fn base_value_env() -> SymbolTable<ValueEnvEntry> {
-    let table = SymbolTable::empty();
-    table
+pub fn base_value_env() -> ValueEnv {
+    SymbolTable::empty()
 }
 
-pub fn base_type_env() -> SymbolTable<Type> {
+pub fn base_type_env() -> TypeEnv {
     let mut table = SymbolTable::empty();
-    table.builtins.insert("int".to_string(), Type::Int);
     table
         .builtins
-        .insert("string".to_string(), Type::String);
+        .insert("int".to_string(), Rc::new(RefCell::new(Type::Int)));
+    table
+        .builtins
+        .insert("string".to_string(), Rc::new(RefCell::new(Type::Int)));
     table
 }

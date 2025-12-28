@@ -78,7 +78,9 @@ where
             .map(TypeDecl::Array))
         .boxed();
     let ty_dec = just(Token::TYPE)
-        .ignore_then(select! {Token::ID(s) => s})
+        .ignore_then(select! {Token::ID(s) => s}
+            .map_with(|id, extra| (id, extra.span()))
+        )
         .then_ignore(just(Token::EQ))
         .then(ty)
         .repeated()
@@ -121,7 +123,7 @@ where
     recursive(|expr| {
         let var = var_parser(expr.clone())
             .boxed()
-            .map(|(var, span)| Exp::var(var));
+            .map(|(var, _)| Exp::var(var));
         let nil = just(Token::NIL).to(Exp::Nil);
         let int = select! {Token::INT(n) => Exp::Int(n)};
         let string = select! {Token::STRING(s) =>Exp::String(s)};
@@ -150,7 +152,7 @@ where
             .boxed();
 
         let unary = just(Token::MINUS)
-            .map_with(|op, extra| (Oper::Minus, extra.span()))
+            .map_with(|_, extra| (Oper::Minus, extra.span()))
             .repeated()
             .foldr_with(atom, |op, exp, e| {
                 (
@@ -247,7 +249,7 @@ where
         let assign = var_parser(expr.clone())
             .then_ignore(just(Token::ASSIGN))
             .then(expr.clone())
-            .map_with(|((var, span), exp), e| (Exp::assign(var, exp), e.span()))
+            .map_with(|((var, _), exp), e| (Exp::assign(var, exp), e.span()))
             .boxed();
         let iff = just(Token::IF)
             .ignore_then(expr.clone())

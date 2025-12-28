@@ -1,9 +1,9 @@
 use crate::parse::lexer::lexer;
 use crate::parse::parser;
 use crate::semant::types::Type;
-use crate::semant::{trans_exp, TypeError, TypeErrorKind, TypedExp};
-use chumsky::input::Stream;
+use crate::semant::{TypeError, TypeErrorKind, TypedExp, trans_exp};
 use chumsky::Parser;
+use chumsky::input::Stream;
 
 #[test]
 pub fn test_typecheck() {
@@ -27,10 +27,7 @@ pub fn test_typecheck() {
     assert_eq!(typecheck_unwrap("42").1, Type::Int);
     assert_eq!(typecheck_unwrap("1+1").1, Type::Int);
     assert_eq!(typecheck_unwrap("1-1").1, Type::Int);
-    assert_eq!(
-        typecheck_unwrap("let var a := 5 in a end").1,
-        Type::Int
-    );
+    assert_eq!(typecheck_unwrap("let var a := 5 in a end").1, Type::Int);
     assert_eq!(
         typecheck_unwrap("let var a: int := 5 in a end").1,
         Type::Int
@@ -49,6 +46,15 @@ pub fn test_typecheck() {
             )
     ));
 
-    assert_eq!(typecheck_unwrap("let var foo := 0 in for x := 5 to 27 do foo := foo + x end").1, Type::Void);
-
+    assert_eq!(
+        typecheck_unwrap("let var foo := 0 in for x := 5 to 27 do foo := foo + x end").1,
+        Type::Void
+    );
+    assert_eq!(
+        typecheck_unwrap(
+            "let type list = { first: int, rest: list } var foo : list := list {} in foo.first end"
+        )
+        .1,
+        Type::Int
+    );
 }
