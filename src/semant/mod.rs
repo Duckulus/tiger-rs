@@ -1,6 +1,6 @@
 use crate::parse::ast::{Dec, Exp, Oper, TypeDecl, Var};
 use crate::parse::lexer::{Span, Spanned};
-use crate::semant::env::{Symbol, SymbolTable, TypeEnv, ValueEnv, base_type_env, base_value_env};
+use crate::semant::env::{base_type_env, base_value_env, Symbol, SymbolTable, TypeEnv, ValueEnv};
 use crate::semant::types::{Type, TypeRef, ValueEnvEntry};
 use chumsky::span::SimpleSpan;
 use std::cell::RefCell;
@@ -110,7 +110,9 @@ fn trans_exp_rec(
                 },
                 Oper::Eq | Oper::Neq => match left_type {
                     Type::Int | Type::String | Type::Record(_, _) | Type::Array(_, _) => {
-                        if right_type == left_type {
+                        if right_type == left_type
+                            || (matches!(left_type, Type::Record(_, _)) && right_type == Type::Nil)
+                        {
                             Ok((exp, Type::Int))
                         } else {
                             Err(TypeError::new(
@@ -349,12 +351,27 @@ fn trans_var(
 fn trans_dec(value_env: &mut ValueEnv, type_env: &mut TypeEnv, dec: Dec) -> Result<(), TypeError> {
     match dec {
         Dec::Function(funcs) => {
-            for func in funcs {
+            for func in &funcs {
                 let mut param_types = Vec::new();
+                for param in &func.params {
+                    let param_type = actual_type(env_lookup(type_env, param.typ.clone())?);
+                    param_types.push(param_type.clone());
+                }
+                let return_type = func
+                    .result
+                    .clone()
+                    .map(|t| env_lookup(type_env, t).map(actual_type))
+                    .transpose()?
+                    .unwrap_or(Type::Void);
+                value_env.enter(
+                    func.name.clone(),
+                    ValueEnvEntry::Fun(param_types, return_type),
+                );
+            }
+            for func in funcs {
                 value_env.begin_scope();
                 for param in func.params {
                     let param_type = actual_type(env_lookup(type_env, param.typ)?);
-                    param_types.push(param_type.clone());
                     value_env.enter(param.name, ValueEnvEntry::Var(param_type));
                 }
                 let return_exp = trans_exp_rec(value_env, type_env, func.body.clone())?;
@@ -371,8 +388,15 @@ fn trans_dec(value_env: &mut ValueEnv, type_env: &mut TypeEnv, dec: Dec) -> Resu
                             },
                         });
                     }
+                } else if return_exp.1 != Type::Void {
+                    return Err(TypeError {
+                        span: func.body.1,
+                        kind: TypeErrorKind::TypeMismatch {
+                            expected: Type::Void,
+                            found: return_exp.1,
+                        },
+                    });
                 }
-                value_env.enter(func.name, ValueEnvEntry::Fun(param_types, return_exp.1));
             }
             Ok(())
         }
