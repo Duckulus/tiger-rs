@@ -15,21 +15,21 @@ struct MipsFrame {
     locals: Vec<MipsAccess>,
     local_offset: i32,
 }
-///
-/// First 4 Args passed in $a0-$a3
-///
-/// HIGH ADDRESSES
-///
-///     incoming args
-/// $fp static link (treated as formal)
-///     locals
-///     return address
-///     temporaries
-///     saved registers
-///     outgoing args
-/// $sp static link
-///
-/// LOW ADDRESSES
+
+// First 4 Args passed in $a0-$a3
+//
+// HIGH ADDRESSES
+//
+//     incoming args
+// $fp static link (treated as formal)
+//     locals
+//     return address
+//     temporaries
+//     saved registers
+//     outgoing args
+// $sp static link
+//
+// LOW ADDRESSES
 impl Frame<MipsAccess> for MipsFrame {
     fn new_frame(name: Label, formals: Vec<bool>) -> Self {
         let mut formal_accesses = Vec::with_capacity(formals.len());

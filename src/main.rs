@@ -3,6 +3,7 @@ use chumsky::prelude::*;
 use std::{env, fs};
 use tiger::parse::lexer::lexer;
 use tiger::parse::parser::exp_parser;
+use tiger::semant::escape::find_escape;
 use tiger::semant::trans_exp;
 
 fn main() {
@@ -49,6 +50,7 @@ fn main() {
         });
 
     let exp = program.unwrap().0;
+    find_escape(&exp.0);
     let ir = trans_exp(exp);
     if let Ok(ir) = ir {
         dbg!(ir);

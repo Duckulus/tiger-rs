@@ -1,4 +1,6 @@
-use crate::parse::ast::{Dec, EField, Exp, Field, FunDec, Oper, TypeDecl, Var};
+use std::cell::RefCell;
+use std::rc::Rc;
+use crate::parse::ast::{Dec, EField, Exp, Field, FormalParam, FunDec, Oper, TypeDecl, Var};
 use crate::parse::lexer::{Span, Spanned, Token};
 use chumsky::input::ValueInput;
 use chumsky::prelude::*;
@@ -65,6 +67,12 @@ where
         .map(|(name, typ)| Field { name, typ })
         .separated_by(just(Token::COMMA))
         .collect();
+    let params = select! {Token::ID(s)=> s}
+        .then_ignore(just(Token::COLON))
+        .then(select! {Token::ID(s)=> s}.map_with(|typ, extra| (typ, extra.span())))
+        .map(|(name, typ)| FormalParam { name, typ, escaping: Rc::new(RefCell::new(false)) })
+        .separated_by(just(Token::COMMA))
+        .collect();
     let ty = select! {Token::ID(s) => s}
         .map_with(|id, extra| TypeDecl::Name((id, extra.span())))
         .or(typed_fields
@@ -91,7 +99,7 @@ where
     let fun_dec = just(Token::FUNCTION)
         .ignore_then(select! {Token::ID(s) => s})
         .then_ignore(just(Token::LPAREN))
-        .then(typed_fields)
+        .then(params)
         .then_ignore(just(Token::RPAREN))
         .then(
             just(Token::COLON)

@@ -50,12 +50,6 @@ pub struct EField {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Field {
-    pub name: Symbol,
-    pub typ: Spanned<TypSymbol>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub enum Exp {
     Var(Box<Var>),
     Nil,
@@ -78,6 +72,7 @@ pub enum Exp {
     Break(Span),
     For {
         var: Symbol,
+        escaping: Rc<RefCell<bool>>,
         lo: Box<Spanned<Exp>>,
         hi: Box<Spanned<Exp>>,
         body: Box<Spanned<Exp>>,
@@ -149,6 +144,7 @@ impl Exp {
     pub fn forr(var: Symbol, lo: Spanned<Exp>, hi: Spanned<Exp>, body: Spanned<Exp>) -> Self {
         Exp::For {
             var,
+            escaping: Rc::new(RefCell::new(false)),
             lo: Box::new(lo),
             hi: Box::new(hi),
             body: Box::new(body),
@@ -171,12 +167,19 @@ impl Exp {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunDec {
     pub name: Symbol,
-    pub params: Vec<Field>,
+    pub params: Vec<FormalParam>,
     pub result: Option<Spanned<TypSymbol>>,
     pub body: Spanned<Exp>,
 }
 
 pub type NamedType = (Spanned<TypSymbol>, TypeDecl);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormalParam {
+    pub name: Symbol,
+    pub typ: Spanned<TypSymbol>,
+    pub escaping: Rc<RefCell<bool>>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dec {
@@ -202,6 +205,12 @@ impl Dec {
     pub fn typee(types: Vec<NamedType>) -> Self {
         Dec::Type(types)
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Field {
+    pub name: Symbol,
+    pub typ: Spanned<TypSymbol>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

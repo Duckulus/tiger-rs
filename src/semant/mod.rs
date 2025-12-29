@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 pub mod env;
 
+pub mod escape;
 pub mod types;
 
 pub type TypedExp = (Spanned<Exp>, Type);
@@ -243,7 +244,13 @@ fn trans_exp_rec(
                 Err(TypeError::new(span, TypeErrorKind::BreakOutsideLoop))
             }
         }
-        Exp::For { var, lo, hi, body } => {
+        Exp::For {
+            var,
+            escaping: escape,
+            lo,
+            hi,
+            body,
+        } => {
             check_type(value_env, type_env, Type::Int, *lo, in_loop)?;
             check_type(value_env, type_env, Type::Int, *hi, in_loop)?;
 

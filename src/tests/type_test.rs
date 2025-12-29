@@ -7,7 +7,6 @@ use chumsky::input::Stream;
 
 // Generated using Gemini
 
-// Helper to reduce boilerplate in tests
 fn typecheck_driver(input: &str) -> Result<TypedExp, TypeError> {
     let lexer = lexer();
     let tokens = lexer
@@ -17,7 +16,6 @@ fn typecheck_driver(input: &str) -> Result<TypedExp, TypeError> {
         .map(|(tok, _)| tok)
         .collect::<Vec<_>>();
 
-    // Note: Assuming your parser exposes an exp_parser function
     trans_exp(
         parser::exp_parser()
             .parse(Stream::from_iter(tokens.into_iter()))

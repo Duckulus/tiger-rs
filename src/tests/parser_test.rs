@@ -1,14 +1,17 @@
 #![allow(unused)]
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use crate::parse::ast::{Dec, EField, Exp, Field, FunDec, NamedType, Oper, Program, Symbol, TypSymbol, TypeDecl, Var};
-use crate::parse::lexer::{lexer, Spanned, Token};
+use crate::parse::ast::{
+    Dec, EField, Exp, Field, FormalParam, FunDec, NamedType, Oper, Program, Symbol, TypSymbol,
+    TypeDecl, Var,
+};
+use crate::parse::lexer::{Spanned, Token, lexer};
 use crate::parse::parser;
 use chumsky::error::Rich;
 use chumsky::input::Stream;
 use chumsky::prelude::SimpleSpan;
 use chumsky::{ParseResult, Parser};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 fn remove_spans_var(var: Var) -> Var {
     match var {
@@ -32,24 +35,37 @@ fn remove_spans_fields(fields: Vec<Field>) -> Vec<Field> {
         .collect()
 }
 
+fn remove_spans_params(params: Vec<FormalParam>) -> Vec<FormalParam> {
+    params
+        .into_iter()
+        .map(|field| FormalParam {
+            name: field.name,
+            typ: (field.typ.0, SimpleSpan::from(0..0)),
+            escaping: field.escaping,
+        })
+        .collect()
+}
+
 fn remove_spans_dec(dec: Dec) -> Dec {
     match dec {
         Dec::Var((var, _), typ, exp, esc) => Dec::Var(
             (var, SimpleSpan::from(0..0)),
             typ.map(|(typ, _)| (typ, SimpleSpan::from(0..0))),
             Box::new(remove_spans(*exp)),
-            esc
+            esc,
         ),
         Dec::Type(types) => Dec::Type(
             types
                 .into_iter()
                 .map(|((name, _), typ)| match typ {
-                    TypeDecl::Name((symb, _)) => {
-                        ((name, SimpleSpan::from(0..0)), TypeDecl::Name((symb, SimpleSpan::from(0..0))))
-                    }
-                    TypeDecl::Record(fields) => {
-                        ((name, SimpleSpan::from(0..0)), TypeDecl::Record(remove_spans_fields(fields)))
-                    }
+                    TypeDecl::Name((symb, _)) => (
+                        (name, SimpleSpan::from(0..0)),
+                        TypeDecl::Name((symb, SimpleSpan::from(0..0))),
+                    ),
+                    TypeDecl::Record(fields) => (
+                        (name, SimpleSpan::from(0..0)),
+                        TypeDecl::Record(remove_spans_fields(fields)),
+                    ),
                     TypeDecl::Array((symb, _)) => (
                         (name, SimpleSpan::from(0..0)),
                         TypeDecl::Array((symb, SimpleSpan::from(0..0))),
@@ -62,7 +78,7 @@ fn remove_spans_dec(dec: Dec) -> Dec {
                 .into_iter()
                 .map(|dec| FunDec {
                     name: dec.name,
-                    params: remove_spans_fields(dec.params),
+                    params: remove_spans_params(dec.params),
                     result: dec.result.map(|(symb, _)| (symb, SimpleSpan::from(0..0))),
                     body: remove_spans(dec.body),
                 })
@@ -113,8 +129,15 @@ fn remove_spans(exp: Spanned<Exp>) -> Spanned<Exp> {
                 body: Box::new(remove_spans(*body)),
             },
             Exp::Break(_) => Exp::Break(SimpleSpan::from(0..0)),
-            Exp::For { var, lo, hi, body } => Exp::For {
+            Exp::For {
                 var,
+                escaping,
+                lo,
+                hi,
+                body,
+            } => Exp::For {
+                var,
+                escaping,
                 lo: Box::new(remove_spans(*lo)),
                 hi: Box::new(remove_spans(*hi)),
                 body: Box::new(remove_spans(*body)),
@@ -214,6 +237,7 @@ fn forr(var: Symbol, lo: Spanned<Exp>, hi: Spanned<Exp>, body: Spanned<Exp>) -> 
     (
         Exp::For {
             var,
+            escaping: Rc::new(RefCell::new(false)),
             lo: Box::new(lo),
             hi: Box::new(hi),
             body: Box::new(body),
@@ -244,12 +268,20 @@ fn field(name: String, typ: String) -> Field {
     }
 }
 
+fn param(name: String, typ: String) -> FormalParam {
+    FormalParam {
+        name,
+        typ: (typ, SimpleSpan::from(0..0)),
+        escaping: Rc::new(RefCell::new(false)),
+    }
+}
+
 fn var_dec(id: String, typ: Option<String>, exp: Spanned<Exp>) -> Dec {
     Dec::Var(
         (id, SimpleSpan::from(0..0)),
         typ.map(|s| (s, SimpleSpan::from(0..0))),
         Box::from(exp),
-        Rc::new(RefCell::new(false))
+        Rc::new(RefCell::new(false)),
     )
 }
 
@@ -465,8 +497,8 @@ pub fn test_parser() {
                 FunDec {
                     name: "foo".to_string(),
                     params: vec![
-                        field("a".to_string(), "int".to_string()),
-                        field("b".to_string(), "int".to_string()),
+                        param("a".to_string(), "int".to_string()),
+                        param("b".to_string(), "int".to_string()),
                     ],
                     result: None,
                     body: nil()
