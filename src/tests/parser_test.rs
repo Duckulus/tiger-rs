@@ -1,4 +1,7 @@
 #![allow(unused)]
+
+use std::cell::RefCell;
+use std::rc::Rc;
 use crate::parse::ast::{Dec, EField, Exp, Field, FunDec, NamedType, Oper, Program, Symbol, TypSymbol, TypeDecl, Var};
 use crate::parse::lexer::{lexer, Spanned, Token};
 use crate::parse::parser;
@@ -31,10 +34,11 @@ fn remove_spans_fields(fields: Vec<Field>) -> Vec<Field> {
 
 fn remove_spans_dec(dec: Dec) -> Dec {
     match dec {
-        Dec::Var((var, _), typ, exp) => Dec::Var(
+        Dec::Var((var, _), typ, exp, esc) => Dec::Var(
             (var, SimpleSpan::from(0..0)),
             typ.map(|(typ, _)| (typ, SimpleSpan::from(0..0))),
             Box::new(remove_spans(*exp)),
+            esc
         ),
         Dec::Type(types) => Dec::Type(
             types
@@ -245,6 +249,7 @@ fn var_dec(id: String, typ: Option<String>, exp: Spanned<Exp>) -> Dec {
         (id, SimpleSpan::from(0..0)),
         typ.map(|s| (s, SimpleSpan::from(0..0))),
         Box::from(exp),
+        Rc::new(RefCell::new(false))
     )
 }
 

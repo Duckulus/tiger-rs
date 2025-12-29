@@ -416,7 +416,7 @@ fn trans_dec(
             }
             Ok(())
         }
-        Dec::Var(symb, type_annotation, exp) => {
+        Dec::Var(symb, type_annotation, exp, _escaping) => {
             let exp_ty = trans_exp_rec(value_env, type_env, *exp.clone(), in_loop)?;
             if let Some(typ_sym) = type_annotation {
                 let typ = actual_type(env_lookup(type_env, typ_sym)?);

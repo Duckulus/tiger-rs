@@ -1,6 +1,8 @@
 #![allow(unused)]
 
 use crate::parse::lexer::{Span, Spanned};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 pub type Symbol = String;
 
@@ -33,9 +35,13 @@ pub enum Oper {
     Minus,
     Times,
     Divide,
-    Eq, Neq, Lt, Le, Gt, Ge
+    Eq,
+    Neq,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EField {
@@ -60,92 +66,127 @@ pub enum Exp {
     Record(Spanned<TypSymbol>, Vec<EField>),
     Seq(Vec<Spanned<Exp>>),
     Assign(Box<Var>, Box<Spanned<Exp>>),
-    If {cond: Box<Spanned<Exp>>, then: Box<Spanned<Exp>>, elsee: Option<Box<Spanned<Exp>>>},
-    While {cond: Box<Spanned<Exp>>, body: Box<Spanned<Exp>>},
+    If {
+        cond: Box<Spanned<Exp>>,
+        then: Box<Spanned<Exp>>,
+        elsee: Option<Box<Spanned<Exp>>>,
+    },
+    While {
+        cond: Box<Spanned<Exp>>,
+        body: Box<Spanned<Exp>>,
+    },
     Break(Span),
-    For {var: Symbol, lo: Box<Spanned<Exp>>, hi: Box<Spanned<Exp>>, body: Box<Spanned<Exp>>},
+    For {
+        var: Symbol,
+        lo: Box<Spanned<Exp>>,
+        hi: Box<Spanned<Exp>>,
+        body: Box<Spanned<Exp>>,
+    },
     Let(Vec<Dec>, Vec<Spanned<Exp>>),
-    Array{typ: Spanned<TypSymbol>, size: Box<Spanned<Exp>>, init: Box<Spanned<Exp>>}
+    Array {
+        typ: Spanned<TypSymbol>,
+        size: Box<Spanned<Exp>>,
+        init: Box<Spanned<Exp>>,
+    },
 }
 
 impl Exp {
     pub fn var(var: Var) -> Self {
         Exp::Var(Box::new(var))
     }
-    
+
     pub fn nil() -> Self {
         Exp::Nil
     }
-    
+
     pub fn int(i: i32) -> Self {
         Exp::Int(i)
     }
-    
+
     pub fn string(s: String) -> Self {
         Exp::String(s)
     }
-    
+
     pub fn call(name: Spanned<Symbol>, args: Vec<Spanned<Exp>>) -> Self {
         Exp::Call(name, args)
     }
-    
+
     pub fn op(op: Spanned<Oper>, e1: Spanned<Exp>, e2: Spanned<Exp>) -> Self {
         Exp::Op(op, Box::new(e1), Box::new(e2))
     }
-    
+
     pub fn record(typ: Spanned<TypSymbol>, fields: Vec<EField>) -> Self {
         Exp::Record(typ, fields)
     }
-    
+
     pub fn seq(exps: Vec<Spanned<Exp>>) -> Self {
         Exp::Seq(exps)
     }
-    
+
     pub fn assign(var: Var, exp: Spanned<Exp>) -> Self {
         Exp::Assign(Box::new(var), Box::new(exp))
     }
-    
+
     pub fn iff(cond: Spanned<Exp>, then: Spanned<Exp>, elsee: Option<Spanned<Exp>>) -> Self {
-        Exp::If {cond: Box::new(cond), then: Box::new(then), elsee: elsee.map(Box::new)}
+        Exp::If {
+            cond: Box::new(cond),
+            then: Box::new(then),
+            elsee: elsee.map(Box::new),
+        }
     }
-    
+
     pub fn whilee(cond: Spanned<Exp>, body: Spanned<Exp>) -> Self {
-        Exp::While {cond: Box::new(cond), body: Box::new(body)}
+        Exp::While {
+            cond: Box::new(cond),
+            body: Box::new(body),
+        }
     }
-    
+
     pub fn breakk(span: Span) -> Self {
         Exp::Break(span)
     }
-    
+
     pub fn forr(var: Symbol, lo: Spanned<Exp>, hi: Spanned<Exp>, body: Spanned<Exp>) -> Self {
-        Exp::For {var, lo: Box::new(lo), hi: Box::new(hi), body: Box::new(body)}
+        Exp::For {
+            var,
+            lo: Box::new(lo),
+            hi: Box::new(hi),
+            body: Box::new(body),
+        }
     }
-    
+
     pub fn lett(decs: Vec<Dec>, body: Vec<Spanned<Exp>>) -> Self {
         Exp::Let(decs, body)
     }
-    
+
     pub fn array(typ: Spanned<TypSymbol>, size: Spanned<Exp>, init: Spanned<Exp>) -> Self {
-        Exp::Array{typ, size: Box::new(size), init: Box::new(init)}
+        Exp::Array {
+            typ,
+            size: Box::new(size),
+            init: Box::new(init),
+        }
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunDec {
     pub name: Symbol,
     pub params: Vec<Field>,
     pub result: Option<Spanned<TypSymbol>>,
-    pub body: Spanned<Exp>
+    pub body: Spanned<Exp>,
 }
-
 
 pub type NamedType = (Spanned<TypSymbol>, TypeDecl);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dec {
     Function(Vec<FunDec>),
-    Var(Spanned<Symbol>, Option<Spanned<TypSymbol>>, Box<Spanned<Exp>>),
+    Var(
+        Spanned<Symbol>,
+        Option<Spanned<TypSymbol>>,
+        Box<Spanned<Exp>>,
+        Rc<RefCell<bool>>,
+    ),
     Type(Vec<NamedType>),
 }
 
@@ -155,7 +196,7 @@ impl Dec {
     }
 
     pub fn var(name: Spanned<Symbol>, typ: Option<Spanned<TypSymbol>>, init: Spanned<Exp>) -> Self {
-        Dec::Var(name, typ, Box::new(init))
+        Dec::Var(name, typ, Box::new(init), Rc::new(RefCell::new(false)))
     }
 
     pub fn typee(types: Vec<NamedType>) -> Self {
