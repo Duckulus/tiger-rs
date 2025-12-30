@@ -131,10 +131,10 @@ fn traverse_dec(env: &mut EscapeEnv, depth: usize, dec: &Dec) {
 fn traverse_var(env: &mut EscapeEnv, depth: usize, var: &Var) {
     match var {
         Var::Simple(name) => {
-            if let Some(entry) = env.lookup(&name.0) {
-                if depth > entry.depth {
-                    *entry.ptr.borrow_mut() = true;
-                }
+            if let Some(entry) = env.lookup(&name.0)
+                && depth > entry.depth
+            {
+                *entry.ptr.borrow_mut() = true;
             }
         }
         Var::Field(var, _) => {

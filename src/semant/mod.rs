@@ -1,7 +1,10 @@
 use crate::parse::ast::{Dec, Exp, Oper, TypeDecl, Var};
 use crate::parse::lexer::{Span, Spanned};
-use crate::semant::env::{Symbol, SymbolTable, TypeEnv, ValueEnv, base_type_env, base_value_env};
+use crate::semant::env::{base_type_env, base_value_env, Symbol, SymbolTable, TypeEnv, ValueEnv};
 use crate::semant::types::{Type, TypeRef, ValueEnvEntry};
+use crate::trans::frame::Frame;
+use crate::trans::temp::Label;
+use crate::trans::Level;
 use chumsky::span::SimpleSpan;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -14,21 +17,23 @@ pub mod types;
 
 pub type TypedExp = (Spanned<Exp>, Type);
 
-pub fn trans_exp(exp: Spanned<Exp>) -> Result<TypedExp, TypeError> {
-    let mut value_env = base_value_env();
+pub fn trans_exp<F: Frame>(exp: Spanned<Exp>) -> Result<TypedExp, TypeError> {
+    let outermost = Rc::new(Level::new_outermost());
+    let mut value_env = base_value_env::<F>();
     let mut type_env = base_type_env();
-    trans_exp_rec(&mut value_env, &mut type_env, exp, false)
+    trans_exp_rec(&mut value_env, &mut type_env, outermost, exp, false)
 }
 
-fn trans_exp_rec(
-    value_env: &mut ValueEnv,
+fn trans_exp_rec<F: Frame>(
+    value_env: &mut ValueEnv<F>,
     type_env: &mut TypeEnv,
+    level: Rc<Level<F>>,
     exp: Spanned<Exp>,
     in_loop: bool,
 ) -> Result<TypedExp, TypeError> {
     match exp.0.clone() {
         Exp::Var(var) => {
-            let typ = trans_var(value_env, type_env, *var, in_loop)?;
+            let typ = trans_var(value_env, type_env, level, *var, in_loop)?;
             Ok((exp, typ))
         }
         Exp::Nil => Ok((exp, Type::Nil)),
@@ -36,7 +41,7 @@ fn trans_exp_rec(
         Exp::String(_) => Ok((exp, Type::String)),
         Exp::Call(fun_name, args) => {
             let fun_type = env_lookup(value_env, fun_name.clone())?;
-            if let ValueEnvEntry::Fun(arg_types, return_type) = fun_type {
+            if let ValueEnvEntry::Fun(arg_types, return_type, fun_level, fun_label) = fun_type {
                 if args.len() != arg_types.len() {
                     let args_span = if args.is_empty() {
                         fun_name.1
@@ -53,7 +58,8 @@ fn trans_exp_rec(
                 }
                 for (arg, expected_type) in args.into_iter().zip(arg_types) {
                     let arg_span = arg.1;
-                    let (_, arg_type) = trans_exp_rec(value_env, type_env, arg, in_loop)?;
+                    let (_, arg_type) =
+                        trans_exp_rec(value_env, type_env, level.clone(), arg, in_loop)?;
                     if arg_type != expected_type {
                         return Err(TypeError::new(
                             arg_span,
@@ -70,9 +76,10 @@ fn trans_exp_rec(
             }
         }
         Exp::Op(op, lhs, rhs) => {
-            let (_, left_type) = trans_exp_rec(value_env, type_env, *lhs.clone(), in_loop)?;
+            let (_, left_type) =
+                trans_exp_rec(value_env, type_env, level.clone(), *lhs.clone(), in_loop)?;
             let (right_exp, right_type) =
-                trans_exp_rec(value_env, type_env, *rhs.clone(), in_loop)?;
+                trans_exp_rec(value_env, type_env, level, *rhs.clone(), in_loop)?;
             match op.0 {
                 Oper::Plus | Oper::Minus | Oper::Times | Oper::Divide => {
                     if !matches!(left_type, Type::Int) {
@@ -139,7 +146,7 @@ fn trans_exp_rec(
                 for efield in efields {
                     let exp_span = efield.value.1;
                     let (_, given_type) =
-                        trans_exp_rec(value_env, type_env, efield.value, in_loop)?;
+                        trans_exp_rec(value_env, type_env, level.clone(), efield.value, in_loop)?;
                     if let Some(pos) = fields.iter().position(|f| f.0 == efield.name.0) {
                         let (_, expected_type) = fields.get(pos).unwrap();
                         let expected_type = actual_type(expected_type.clone());
@@ -182,18 +189,23 @@ fn trans_exp_rec(
             }
         }
         Exp::Seq(exps) => {
-            let (_, ty) =
-                trans_exp_rec(value_env, type_env, exps.last().unwrap().clone(), in_loop)?;
+            let (_, ty) = trans_exp_rec(
+                value_env,
+                type_env,
+                level,
+                exps.last().unwrap().clone(),
+                in_loop,
+            )?;
             Ok((exp, ty))
         }
         Exp::Assign(var, exp) => {
-            let var_ty = trans_var(value_env, type_env, *var, in_loop)?;
-            check_type(value_env, type_env, var_ty, *exp.clone(), in_loop)?;
+            let var_ty = trans_var(value_env, type_env, level.clone(), *var, in_loop)?;
+            check_type(value_env, type_env, level, var_ty, *exp.clone(), in_loop)?;
             Ok((*exp, Type::Void))
         }
         Exp::If { cond, then, elsee } => {
             let cond_span = cond.1;
-            let (_, cond_type) = trans_exp_rec(value_env, type_env, *cond, in_loop)?;
+            let (_, cond_type) = trans_exp_rec(value_env, type_env, level.clone(), *cond, in_loop)?;
             if !matches!(cond_type, Type::Int) {
                 return Err(TypeError {
                     span: cond_span,
@@ -204,10 +216,10 @@ fn trans_exp_rec(
                 });
             }
             let then_span = then.1;
-            let (_, then_type) = trans_exp_rec(value_env, type_env, *then, in_loop)?;
+            let (_, then_type) = trans_exp_rec(value_env, type_env, level.clone(), *then, in_loop)?;
             if let Some(elsee) = elsee {
                 let else_span = elsee.1;
-                let (_, else_type) = trans_exp_rec(value_env, type_env, *elsee, in_loop)?;
+                let (_, else_type) = trans_exp_rec(value_env, type_env, level, *elsee, in_loop)?;
                 if then_type != else_type {
                     Err(TypeError {
                         span: else_span,
@@ -233,8 +245,15 @@ fn trans_exp_rec(
             }
         }
         Exp::While { cond, body } => {
-            check_type(value_env, type_env, Type::Int, *cond, in_loop)?;
-            check_type(value_env, type_env, Type::Void, *body, true)?;
+            check_type(
+                value_env,
+                type_env,
+                level.clone(),
+                Type::Int,
+                *cond,
+                in_loop,
+            )?;
+            check_type(value_env, type_env, level, Type::Void, *body, true)?;
             Ok((exp, Type::Void))
         }
         Exp::Break(span) => {
@@ -251,12 +270,13 @@ fn trans_exp_rec(
             hi,
             body,
         } => {
-            check_type(value_env, type_env, Type::Int, *lo, in_loop)?;
-            check_type(value_env, type_env, Type::Int, *hi, in_loop)?;
+            check_type(value_env, type_env, level.clone(), Type::Int, *lo, in_loop)?;
+            check_type(value_env, type_env, level.clone(), Type::Int, *hi, in_loop)?;
 
             value_env.begin_scope();
-            value_env.enter(var, ValueEnvEntry::Var(Type::Int));
-            check_type(value_env, type_env, Type::Void, *body, true)?;
+            let access = level.alloc_local(*escape.borrow());
+            value_env.enter(var, ValueEnvEntry::Var(Type::Int, access));
+            check_type(value_env, type_env, level, Type::Void, *body, true)?;
             value_env.end_scope();
 
             Ok((exp, Type::Void))
@@ -265,11 +285,17 @@ fn trans_exp_rec(
             value_env.begin_scope();
             type_env.begin_scope();
             for dec in decs {
-                trans_dec(value_env, type_env, dec, in_loop)?;
+                trans_dec(value_env, type_env, level.clone(), dec, in_loop)?;
             }
             let mut last = None;
             for exp in exps {
-                last = Some(trans_exp_rec(value_env, type_env, exp, in_loop)?);
+                last = Some(trans_exp_rec(
+                    value_env,
+                    type_env,
+                    level.clone(),
+                    exp,
+                    in_loop,
+                )?);
             }
             type_env.end_scope();
             value_env.end_scope();
@@ -279,7 +305,8 @@ fn trans_exp_rec(
             let typ_span = typ.1;
             let ty = actual_type(env_lookup(type_env, typ)?);
             if let Type::Array(ref elem_type, _) = ty {
-                let (_, size_type) = trans_exp_rec(value_env, type_env, *size.clone(), in_loop)?;
+                let (_, size_type) =
+                    trans_exp_rec(value_env, type_env, level.clone(), *size.clone(), in_loop)?;
                 if size_type != Type::Int {
                     return Err(TypeError {
                         span: size.1,
@@ -289,7 +316,8 @@ fn trans_exp_rec(
                         },
                     });
                 }
-                let (_, init_type) = trans_exp_rec(value_env, type_env, *init.clone(), in_loop)?;
+                let (_, init_type) =
+                    trans_exp_rec(value_env, type_env, level, *init.clone(), in_loop)?;
                 if init_type != *elem_type.borrow() {
                     return Err(TypeError {
                         span: init.1,
@@ -310,9 +338,10 @@ fn trans_exp_rec(
     }
 }
 
-fn trans_var(
-    value_env: &mut ValueEnv,
+fn trans_var<F: Frame>(
+    value_env: &mut ValueEnv<F>,
     type_env: &mut TypeEnv,
+    level: Rc<Level<F>>,
     var: Var,
     in_loop: bool,
 ) -> Result<Type, TypeError> {
@@ -322,14 +351,14 @@ fn trans_var(
             let entry = env_lookup(value_env, symb)?;
 
             match entry {
-                ValueEnvEntry::Var(typ) => Ok(typ),
-                ValueEnvEntry::Fun(_, _) => {
+                ValueEnvEntry::Var(typ, access) => Ok(typ),
+                ValueEnvEntry::Fun(_, _, _, _) => {
                     Err(TypeError::new(symb_span, TypeErrorKind::InvalidIdentifier))
                 }
             }
         }
         Var::Field(var, symb) => {
-            let var_typ = trans_var(value_env, type_env, *var, in_loop)?;
+            let var_typ = trans_var(value_env, type_env, level, *var, in_loop)?;
             if let Type::Record(fields, _) = var_typ {
                 let field = fields.iter().find(|f| f.0 == symb.0);
                 if let Some((_, field_type)) = field {
@@ -346,7 +375,7 @@ fn trans_var(
         }
         Var::Subscript(var, exp) => {
             let exp_span = exp.1;
-            let (_, index_type) = trans_exp_rec(value_env, type_env, *exp, in_loop)?;
+            let (_, index_type) = trans_exp_rec(value_env, type_env, level.clone(), *exp, in_loop)?;
             if index_type != Type::Int {
                 return Err(TypeError::new(
                     exp_span,
@@ -356,7 +385,7 @@ fn trans_var(
                     },
                 ));
             }
-            let var_typ = trans_var(value_env, type_env, *var, in_loop)?;
+            let var_typ = trans_var(value_env, type_env, level, *var, in_loop)?;
             if let Type::Array(elem_type, _) = var_typ {
                 Ok(elem_type.borrow().clone())
             } else {
@@ -366,19 +395,23 @@ fn trans_var(
     }
 }
 
-fn trans_dec(
-    value_env: &mut ValueEnv,
+fn trans_dec<F: Frame>(
+    value_env: &mut ValueEnv<F>,
     type_env: &mut TypeEnv,
+    level: Rc<Level<F>>,
     dec: Dec,
     in_loop: bool,
 ) -> Result<(), TypeError> {
     match dec {
         Dec::Function(funcs) => {
+            let mut func_levels = Vec::new();
             for func in &funcs {
                 let mut param_types = Vec::new();
+                let mut param_escaping = Vec::new();
                 for param in &func.params {
                     let param_type = actual_type(env_lookup(type_env, param.typ.clone())?);
                     param_types.push(param_type.clone());
+                    param_escaping.push(*param.escaping.borrow());
                 }
                 let return_type = func
                     .result
@@ -386,18 +419,27 @@ fn trans_dec(
                     .map(|t| env_lookup(type_env, t).map(actual_type))
                     .transpose()?
                     .unwrap_or(Type::Void);
+
+                let label = Label::new_unnamed();
+                let new_level = Rc::new(Level::new_inner(
+                    level.clone(),
+                    label.clone(),
+                    param_escaping,
+                ));
+                func_levels.push(new_level.clone());
                 value_env.enter(
                     func.name.clone(),
-                    ValueEnvEntry::Fun(param_types, return_type),
+                    ValueEnvEntry::Fun(param_types, return_type, new_level, label),
                 );
             }
-            for func in funcs {
+            for (func, func_level) in funcs.into_iter().zip(func_levels) {
                 value_env.begin_scope();
-                for param in func.params {
+                for (param, access) in func.params.into_iter().zip(func_level.formals()) {
                     let param_type = actual_type(env_lookup(type_env, param.typ)?);
-                    value_env.enter(param.name, ValueEnvEntry::Var(param_type));
+                    value_env.enter(param.name, ValueEnvEntry::Var(param_type, access));
                 }
-                let return_exp = trans_exp_rec(value_env, type_env, func.body.clone(), false)?;
+                let return_exp =
+                    trans_exp_rec(value_env, type_env, func_level, func.body.clone(), false)?;
                 value_env.end_scope();
 
                 if let Some(return_type_symbol) = func.result {
@@ -423,8 +465,8 @@ fn trans_dec(
             }
             Ok(())
         }
-        Dec::Var(symb, type_annotation, exp, _escaping) => {
-            let exp_ty = trans_exp_rec(value_env, type_env, *exp.clone(), in_loop)?;
+        Dec::Var(symb, type_annotation, exp, escaping) => {
+            let exp_ty = trans_exp_rec(value_env, type_env, level.clone(), *exp.clone(), in_loop)?;
             if let Some(typ_sym) = type_annotation {
                 let typ = actual_type(env_lookup(type_env, typ_sym)?);
                 if typ != exp_ty.1 {
@@ -437,7 +479,8 @@ fn trans_dec(
                     ));
                 }
             }
-            value_env.enter(symb.0, ValueEnvEntry::Var(exp_ty.1.clone()));
+            let access = level.alloc_local(*escaping.borrow());
+            value_env.enter(symb.0, ValueEnvEntry::Var(exp_ty.1.clone(), access));
             Ok(())
         }
         Dec::Type(named_types) => {
@@ -483,15 +526,16 @@ fn is_cyclic(type_ref: TypeRef) -> bool {
     false
 }
 
-fn check_type(
-    value_env: &mut ValueEnv,
+fn check_type<F: Frame>(
+    value_env: &mut ValueEnv<F>,
     type_env: &mut TypeEnv,
+    level: Rc<Level<F>>,
     expected_type: Type,
     exp: Spanned<Exp>,
     in_loop: bool,
 ) -> Result<(), TypeError> {
     let span = exp.1;
-    let (_, typ) = trans_exp_rec(value_env, type_env, exp, in_loop)?;
+    let (_, typ) = trans_exp_rec(value_env, type_env, level, exp, in_loop)?;
     if typ != expected_type {
         Err(TypeError {
             span,

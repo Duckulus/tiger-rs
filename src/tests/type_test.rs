@@ -1,10 +1,10 @@
 use crate::parse::lexer::lexer;
 use crate::parse::parser;
 use crate::semant::types::Type;
-use crate::semant::{TypeError, TypeErrorKind, TypedExp, trans_exp};
-use chumsky::Parser;
+use crate::semant::{trans_exp, TypeError, TypeErrorKind, TypedExp};
+use crate::trans::mips_frame::MipsFrame;
 use chumsky::input::Stream;
-
+use chumsky::Parser;
 // Generated using Gemini
 
 fn typecheck_driver(input: &str) -> Result<TypedExp, TypeError> {
@@ -16,7 +16,7 @@ fn typecheck_driver(input: &str) -> Result<TypedExp, TypeError> {
         .map(|(tok, _)| tok)
         .collect::<Vec<_>>();
 
-    trans_exp(
+    trans_exp::<MipsFrame>(
         parser::exp_parser()
             .parse(Stream::from_iter(tokens.into_iter()))
             .unwrap(),

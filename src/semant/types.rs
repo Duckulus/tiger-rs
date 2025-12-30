@@ -1,4 +1,7 @@
 use crate::semant::env::Symbol;
+use crate::trans::frame::Frame;
+use crate::trans::temp::Label;
+use crate::trans::{Level, TrAccess};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
 use std::rc::Rc;
@@ -39,7 +42,7 @@ impl Display for Type {
 }
 
 #[derive(Clone)]
-pub enum ValueEnvEntry {
-    Var(Type),
-    Fun(Vec<Type>, Type),
+pub enum ValueEnvEntry<F: Frame> {
+    Var(Type, TrAccess<F>),
+    Fun(Vec<Type>, Type, Rc<Level<F>>, Label),
 }

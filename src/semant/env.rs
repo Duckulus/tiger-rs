@@ -2,10 +2,11 @@ use crate::semant::types::{Type, TypeRef, ValueEnvEntry};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use crate::trans::frame::Frame;
 
 pub type Symbol = String;
 
-pub type ValueEnv = SymbolTable<ValueEnvEntry>;
+pub type ValueEnv<F> = SymbolTable<ValueEnvEntry<F>>;
 pub type TypeEnv = SymbolTable<TypeRef>;
 
 pub struct SymbolTable<T> {
@@ -61,7 +62,7 @@ impl<T: Clone> SymbolTable<T> {
     }
 }
 
-pub fn base_value_env() -> ValueEnv {
+pub fn base_value_env<F: Frame>() -> ValueEnv<F> {
     SymbolTable::empty()
 }
 

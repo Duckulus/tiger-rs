@@ -3,16 +3,16 @@ use crate::trans::temp::{Label, Temp};
 
 const WORD_SIZE: i32 = 4;
 
-#[derive(Clone)]
-enum MipsAccess {
+#[derive(Clone, Debug)]
+pub enum MipsAccess {
     InFrame(i32),
     InReg(Temp),
 }
 
-struct MipsFrame {
+#[derive(Clone, Debug)]
+pub struct MipsFrame {
     label: Label,
     formals: Vec<MipsAccess>,
-    locals: Vec<MipsAccess>,
     local_offset: i32,
 }
 
@@ -30,7 +30,9 @@ struct MipsFrame {
 // $sp static link
 //
 // LOW ADDRESSES
-impl Frame<MipsAccess> for MipsFrame {
+impl Frame for MipsFrame {
+    type Access = MipsAccess;
+
     fn new_frame(name: Label, formals: Vec<bool>) -> Self {
         let mut formal_accesses = Vec::with_capacity(formals.len());
         let mut local_offset = 0;
@@ -53,7 +55,6 @@ impl Frame<MipsAccess> for MipsFrame {
         Self {
             label: name,
             formals: formal_accesses,
-            locals: Vec::new(),
             local_offset,
         }
     }
@@ -67,14 +68,12 @@ impl Frame<MipsAccess> for MipsFrame {
     }
 
     fn alloc_local(&mut self, escape: bool) -> MipsAccess {
-        let local = if escape {
+        if escape {
             let local = MipsAccess::InFrame(self.local_offset);
             self.local_offset -= WORD_SIZE;
             local
         } else {
             MipsAccess::InReg(Temp::new())
-        };
-        self.locals.push(local.clone());
-        local
+        }
     }
 }

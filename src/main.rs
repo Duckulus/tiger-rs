@@ -5,6 +5,7 @@ use tiger::parse::lexer::lexer;
 use tiger::parse::parser::exp_parser;
 use tiger::semant::escape::find_escape;
 use tiger::semant::trans_exp;
+use tiger::trans::mips_frame::MipsFrame;
 
 fn main() {
     let filename = env::args().nth(1).expect("Expected file argument");
@@ -51,7 +52,7 @@ fn main() {
 
     let exp = program.unwrap().0;
     find_escape(&exp.0);
-    let ir = trans_exp(exp);
+    let ir = trans_exp::<MipsFrame>(exp);
     if let Ok(ir) = ir {
         dbg!(ir);
     } else if let Err(e) = ir {

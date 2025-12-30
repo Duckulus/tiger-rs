@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 type TempID = u32;
 static NEXT_TEMP_ID: AtomicU32 = AtomicU32::new(0);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Temp(TempID);
 
 impl Temp {
@@ -19,7 +19,7 @@ impl Temp {
 type LabelID = u32;
 static NEXT_LABEL_ID: AtomicU32 = AtomicU32::new(0);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Label {
     Unnamed(LabelID),
     Named(LabelID, String),
