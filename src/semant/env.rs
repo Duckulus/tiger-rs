@@ -1,8 +1,8 @@
 use crate::semant::types::{Type, TypeRef, ValueEnvEntry};
+use crate::trans::frame::Frame;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use crate::trans::frame::Frame;
 
 pub type Symbol = String;
 
@@ -10,8 +10,8 @@ pub type ValueEnv<F> = SymbolTable<ValueEnvEntry<F>>;
 pub type TypeEnv = SymbolTable<TypeRef>;
 
 pub struct SymbolTable<T> {
-    table: HashMap<Symbol, Vec<T>>,
-    undo_stack: Vec<UndoStackEntry>,
+    table: RefCell<HashMap<Symbol, Vec<T>>>,
+    undo_stack: RefCell<Vec<UndoStackEntry>>,
     builtins: HashMap<Symbol, T>,
 }
 
@@ -23,39 +23,46 @@ enum UndoStackEntry {
 impl<T: Clone> SymbolTable<T> {
     pub fn empty() -> Self {
         SymbolTable {
-            table: HashMap::new(),
-            undo_stack: Vec::new(),
+            table: RefCell::new(HashMap::new()),
+            undo_stack: RefCell::new(Vec::new()),
             builtins: HashMap::new(),
         }
     }
 
-    pub fn enter(&mut self, symbol: Symbol, value: T) {
-        if !self.table.contains_key(&symbol) {
-            self.table.insert(symbol.clone(), Vec::new());
+    pub fn enter(&self, symbol: Symbol, value: T) {
+        let mut table = self.table.borrow_mut();
+        if !table.contains_key(&symbol) {
+            table.insert(symbol.clone(), Vec::new());
         }
-        self.table.get_mut(&symbol).unwrap().push(value);
-        self.undo_stack.push(UndoStackEntry::Entry(symbol));
+        table.get_mut(&symbol).unwrap().push(value);
+        let mut undo_stack = self.undo_stack.borrow_mut();
+        undo_stack.push(UndoStackEntry::Entry(symbol));
     }
 
-    pub fn begin_scope(&mut self) {
-        self.undo_stack.push(UndoStackEntry::BeginMarker);
+    pub fn begin_scope(&self) {
+        let mut undo_stack = self.undo_stack.borrow_mut();
+        undo_stack.push(UndoStackEntry::BeginMarker);
     }
 
-    pub fn end_scope(&mut self) {
-        if self.undo_stack.is_empty() {
+    pub fn end_scope(&self) {
+        let mut undo_stack = self.undo_stack.borrow_mut();
+        if undo_stack.is_empty() {
             return;
         }
-        while let UndoStackEntry::Entry(symbol) = self.undo_stack.last().unwrap() {
-            self.table.get_mut(symbol).unwrap().pop();
-            self.undo_stack.pop();
+
+        let mut table = self.table.borrow_mut();
+        while let UndoStackEntry::Entry(symbol) = undo_stack.last().unwrap() {
+            table.get_mut(symbol).unwrap().pop();
+            undo_stack.pop();
         }
-        if !self.undo_stack.is_empty() {
-            self.undo_stack.pop();
+        if !undo_stack.is_empty() {
+            undo_stack.pop();
         }
     }
 
     pub fn lookup(&self, symbol: &Symbol) -> Option<T> {
         self.table
+            .borrow_mut()
             .get(symbol)
             .and_then(|bucket| bucket.last().cloned())
             .or_else(|| self.builtins.get(symbol).cloned())

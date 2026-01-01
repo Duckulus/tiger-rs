@@ -145,19 +145,19 @@ pub fn un_cx(exp: TrExp) -> Cx {
 }
 
 pub struct Translator {
-    fragments: Vec<Fragment>,
+    fragments: RefCell<Vec<Fragment>>,
 }
 
 impl Translator {
     pub fn new() -> Self {
         Translator {
-            fragments: Vec::new(),
+            fragments: RefCell::new(Vec::new()),
         }
     }
-    pub fn trans_string(&mut self, string: String) -> TrExp {
+    pub fn trans_string(&self, string: String) -> TrExp {
         let label = Label::new_unnamed();
         let frag = Fragment::String(label.clone(), string);
-        self.fragments.push(frag);
+        self.fragments.borrow_mut().push(frag);
         TrExp::Ex(TreeExp::Name(label))
     }
 }

@@ -3,9 +3,11 @@ use chumsky::prelude::*;
 use std::{env, fs};
 use tiger::parse::lexer::lexer;
 use tiger::parse::parser::exp_parser;
+use tiger::semant::env::{base_type_env, base_value_env};
 use tiger::semant::escape::find_escape;
-use tiger::semant::trans_exp;
+use tiger::semant::Semant;
 use tiger::trans::mips_frame::MipsFrame;
+use tiger::trans::Translator;
 
 fn main() {
     let filename = env::args().nth(1).expect("Expected file argument");
@@ -52,7 +54,12 @@ fn main() {
 
     let exp = program.unwrap().0;
     find_escape(&exp.0);
-    let ir = trans_exp::<MipsFrame>(exp);
+
+    let value_env = base_value_env::<MipsFrame>();
+    let type_env = base_type_env();
+    let translator = Translator::new();
+    let mut semant = Semant::new(&value_env, &type_env, &translator);
+    let ir = semant.trans_exp(exp);
     if let Ok(ir) = ir {
         dbg!(ir);
     } else if let Err(e) = ir {
