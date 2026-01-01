@@ -1,6 +1,6 @@
 let
-  var x := 3
-  var lala := "was geht ab"
+  type foo = { a: int, b: int }
+  var foo := foo { a = 1, b = 1}
 in
-  x + 3
+ foo.b := 34
 end

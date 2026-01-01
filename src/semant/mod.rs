@@ -27,23 +27,25 @@ pub struct Semant<'a, F: Frame> {
     type_env: &'a TypeEnv,
     translator: &'a Translator<F>,
     loop_end_label: Option<Label>,
+    outermost_level: Rc<Level<F>>,
 }
 
 impl<'a, F: Frame> Semant<'a, F> {
     pub fn trans_exp(&mut self, exp: Spanned<Exp>) -> Result<TranslatedExp, TypeError> {
-        let outermost = Rc::new(Level::<F>::new_outermost());
-        self.trans_exp_rec(exp, outermost)
+        self.trans_exp_rec(exp, self.outermost_level.clone())
     }
 
     pub fn new(
         value_env: &'a ValueEnv<F>,
         type_env: &'a TypeEnv,
         translator: &'a Translator<F>,
+        outermost_level: Rc<Level<F>>,
     ) -> Self {
         Self {
             value_env,
             type_env,
             translator,
+            outermost_level,
             loop_end_label: None,
         }
     }

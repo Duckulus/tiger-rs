@@ -1,13 +1,14 @@
-use ariadne::{sources, Color, Label, Report, ReportKind};
+use ariadne::{Color, Label, Report, ReportKind, sources};
 use chumsky::prelude::*;
+use std::rc::Rc;
 use std::{env, fs};
 use tiger::parse::lexer::lexer;
 use tiger::parse::parser::exp_parser;
+use tiger::semant::Semant;
 use tiger::semant::env::{base_type_env, base_value_env};
 use tiger::semant::escape::find_escape;
-use tiger::semant::Semant;
 use tiger::trans::mips_frame::MipsFrame;
-use tiger::trans::Translator;
+use tiger::trans::{Level, Translator};
 
 fn main() {
     let filename = env::args().nth(1).expect("Expected file argument");
@@ -55,10 +56,11 @@ fn main() {
     let exp = program.unwrap().0;
     find_escape(&exp.0);
 
-    let value_env = base_value_env::<MipsFrame>();
+    let outermost = Rc::new(Level::<MipsFrame>::new_outermost());
+    let value_env = base_value_env::<MipsFrame>(outermost.clone());
     let type_env = base_type_env();
     let translator = Translator::new();
-    let mut semant = Semant::new(&value_env, &type_env, &translator);
+    let mut semant = Semant::new(&value_env, &type_env, &translator, outermost);
     let ir = semant.trans_exp(exp);
     if let Ok(ir) = ir {
         dbg!(ir);

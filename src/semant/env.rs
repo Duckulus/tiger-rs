@@ -1,5 +1,7 @@
 use crate::semant::types::{Type, TypeRef, ValueEnvEntry};
+use crate::trans::Level;
 use crate::trans::frame::Frame;
+use crate::trans::temp::Label;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -69,8 +71,18 @@ impl<T: Clone> SymbolTable<T> {
     }
 }
 
-pub fn base_value_env<F: Frame>() -> ValueEnv<F> {
-    SymbolTable::empty()
+pub fn base_value_env<F: Frame>(outermost: Rc<Level<F>>) -> ValueEnv<F> {
+    let mut table = SymbolTable::empty();
+    table.builtins.insert(
+        "concat".to_string(),
+        ValueEnvEntry::Fun(
+            vec![Type::String, Type::String],
+            Type::String,
+            outermost,
+            Label::new_unnamed(),
+        ),
+    );
+    table
 }
 
 pub fn base_type_env() -> TypeEnv {

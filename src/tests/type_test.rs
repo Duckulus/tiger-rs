@@ -1,10 +1,11 @@
+use std::rc::Rc;
 use crate::parse::lexer::lexer;
 use crate::parse::parser;
 use crate::semant::env::{base_type_env, base_value_env};
 use crate::semant::types::Type;
 use crate::semant::{Semant, TranslatedExp, TypeError, TypeErrorKind};
 use crate::trans::mips_frame::MipsFrame;
-use crate::trans::Translator;
+use crate::trans::{Level, Translator};
 use chumsky::input::Stream;
 use chumsky::Parser;
 // Generated using Gemini
@@ -18,10 +19,11 @@ fn typecheck_driver(input: &str) -> Result<TranslatedExp, TypeError> {
         .map(|(tok, _)| tok)
         .collect::<Vec<_>>();
 
-    let value_env = base_value_env::<MipsFrame>();
+    let outermost = Rc::new(Level::<MipsFrame>::new_outermost());
+    let value_env = base_value_env::<MipsFrame>(outermost.clone());
     let type_env = base_type_env();
     let translator = Translator::new();
-    let mut semant = Semant::new(&value_env, &type_env, &translator);
+    let mut semant = Semant::new(&value_env, &type_env, &translator, outermost);
     semant.trans_exp(
         parser::exp_parser()
             .parse(Stream::from_iter(tokens.into_iter()))
