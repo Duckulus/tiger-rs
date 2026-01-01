@@ -1,13 +1,13 @@
 use crate::parse::lexer::lexer;
 use crate::parse::parser;
 use crate::semant::types::Type;
-use crate::semant::{trans_exp, TypeError, TypeErrorKind, TypedExp};
+use crate::semant::{trans_exp, TypeError, TypeErrorKind, TranslatedExp};
 use crate::trans::mips_frame::MipsFrame;
 use chumsky::input::Stream;
 use chumsky::Parser;
 // Generated using Gemini
 
-fn typecheck_driver(input: &str) -> Result<TypedExp, TypeError> {
+fn typecheck_driver(input: &str) -> Result<TranslatedExp, TypeError> {
     let lexer = lexer();
     let tokens = lexer
         .parse(input)

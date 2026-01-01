@@ -1,7 +1,10 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 type TempID = u32;
-static NEXT_TEMP_ID: AtomicU32 = AtomicU32::new(0);
+
+// temp ids 0-99 are reserved for special registers
+const FIRST_VIRTUAL_REG_ID: u32 = 100;
+static NEXT_TEMP_ID: AtomicU32 = AtomicU32::new(FIRST_VIRTUAL_REG_ID);
 
 #[derive(Clone, Debug)]
 pub struct Temp(TempID);
@@ -9,6 +12,10 @@ pub struct Temp(TempID);
 impl Temp {
     pub fn new() -> Self {
         Self(NEXT_TEMP_ID.fetch_add(1, Ordering::SeqCst))
+    }
+
+    pub fn with_id(id: TempID) -> Self {
+        Self(id)
     }
 
     pub fn id(&self) -> TempID {

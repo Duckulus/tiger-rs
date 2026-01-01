@@ -1,7 +1,10 @@
 use crate::trans::frame::Frame;
 use crate::trans::temp::{Label, Temp};
+use crate::trans::tree::TreeExp;
 
 const WORD_SIZE: i32 = 4;
+
+const REG_FP: u32 = 30;
 
 #[derive(Clone, Debug)]
 pub enum MipsAccess {
@@ -75,5 +78,20 @@ impl Frame for MipsFrame {
         } else {
             MipsAccess::InReg(Temp::new())
         }
+    }
+
+    fn fp() -> Temp {
+        Temp::with_id(REG_FP)
+    }
+
+    fn build_exp(access: Self::Access, fp: TreeExp) -> TreeExp {
+        match access {
+            MipsAccess::InFrame(offset) => TreeExp::mem(TreeExp::plus(fp, TreeExp::constt(offset))),
+            MipsAccess::InReg(temp) => TreeExp::temp(temp),
+        }
+    }
+
+    fn word_size() -> i32 {
+        WORD_SIZE
     }
 }
