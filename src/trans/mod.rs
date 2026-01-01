@@ -3,7 +3,7 @@ use crate::semant::types::Type;
 use crate::trans::fragment::Fragment;
 use crate::trans::frame::Frame;
 use crate::trans::temp::{Label, Temp};
-use crate::trans::tree::{Patch, TreeBinOp, TreeExp, TreeRelOp, TreeStm};
+use crate::trans::tree::{Patch, TreeBinOp, TreeExp, TreeRelOp, TreeStm, to_seq};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -134,8 +134,15 @@ pub fn un_nx(exp: TrExp) -> TreeStm {
 
 pub fn un_cx(exp: TrExp) -> Cx {
     match exp {
-        TrExp::Ex(_) => {
-            unimplemented!()
+        TrExp::Ex(exp) => {
+            let t = Rc::new(RefCell::new(None));
+            let f = Rc::new(RefCell::new(None));
+            let stm = TreeStm::cjump(TreeRelOp::Gt, exp, TreeExp::Const(0), t.clone(), f.clone());
+            Cx {
+                stm,
+                trues: vec![t],
+                falses: vec![f],
+            }
         }
         TrExp::Nx(_) => {
             panic!("un_cx called with Nx")
@@ -144,11 +151,17 @@ pub fn un_cx(exp: TrExp) -> Cx {
     }
 }
 
-pub struct Translator {
-    fragments: RefCell<Vec<Fragment>>,
+pub struct Translator<F: Frame> {
+    fragments: RefCell<Vec<Fragment<F>>>,
 }
 
-impl Translator {
+impl<F: Frame> Default for Translator<F> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<F: Frame> Translator<F> {
     pub fn new() -> Self {
         Translator {
             fragments: RefCell::new(Vec::new()),
@@ -159,6 +172,15 @@ impl Translator {
         let frag = Fragment::String(label.clone(), string);
         self.fragments.borrow_mut().push(frag);
         TrExp::Ex(TreeExp::Name(label))
+    }
+
+    pub fn proc_entry_exit(&self, level: Rc<Level<F>>, body: TrExp) {
+        let frag = Fragment::Proc(un_nx(body), level.frame.borrow().clone());
+        self.fragments.borrow_mut().push(frag);
+    }
+
+    pub fn get_result(&self) -> Vec<Fragment<F>> {
+        self.fragments.borrow().clone()
     }
 }
 
@@ -218,12 +240,12 @@ pub fn trans_binary_arithmetic(op: Oper, lhs: TrExp, rhs: TrExp) -> TrExp {
 
 pub fn trans_rel_op(op: Oper, typ: Type, lhs: TrExp, rhs: TrExp) -> TrExp {
     let oper = match op {
-        Oper::Eq => TreeRelOp::EQ,
-        Oper::Neq => TreeRelOp::NE,
-        Oper::Lt => TreeRelOp::LT,
-        Oper::Le => TreeRelOp::ULE,
-        Oper::Gt => TreeRelOp::UGT,
-        Oper::Ge => TreeRelOp::UGE,
+        Oper::Eq => TreeRelOp::Eq,
+        Oper::Neq => TreeRelOp::Ne,
+        Oper::Lt => TreeRelOp::Lt,
+        Oper::Le => TreeRelOp::Ule,
+        Oper::Gt => TreeRelOp::Ugt,
+        Oper::Ge => TreeRelOp::Uge,
         _ => panic!("Expected rel operator found {:?}", op),
     };
 
@@ -343,4 +365,84 @@ pub fn trans_array(size: TrExp, init_value: TrExp) -> TrExp {
         ),
     );
     TrExp::Ex(TreeExp::eseq(alloc, TreeExp::temp(r)))
+}
+
+pub fn trans_while(condition: TrExp, body: TrExp, end_label: Label) -> TrExp {
+    let test_label = Label::new_unnamed();
+    let body_label = Label::new_unnamed();
+    let cx = un_cx(condition);
+    patch(&cx, body_label.clone(), end_label.clone());
+    TrExp::Nx(TreeStm::seq(
+        TreeStm::label(test_label.clone()),
+        TreeStm::seq(
+            cx.stm,
+            TreeStm::seq(
+                TreeStm::Label(body_label),
+                TreeStm::seq(
+                    un_nx(body),
+                    TreeStm::seq(
+                        TreeStm::jump(TreeExp::name(test_label.clone()), vec![test_label]),
+                        TreeStm::label(end_label),
+                    ),
+                ),
+            ),
+        ),
+    ))
+}
+
+pub fn trans_break(end_label: Label) -> TrExp {
+    TrExp::Nx(TreeStm::jump(
+        TreeExp::name(end_label.clone()),
+        vec![end_label],
+    ))
+}
+
+pub fn trans_assign(var: TrExp, value: TrExp) -> TrExp {
+    TrExp::Nx(TreeStm::movee(un_ex(var), un_ex(value)))
+}
+
+pub fn trans_seq(mut exps: Vec<TrExp>) -> TrExp {
+    let last = exps.pop().unwrap();
+
+    TrExp::Ex(TreeExp::eseq(
+        to_seq(exps.into_iter().map(un_nx).collect()),
+        un_ex(last),
+    ))
+}
+
+pub fn trans_fun_call<F: Frame>(
+    label: Label,
+    args: Vec<TrExp>,
+    fun_level: Rc<Level<F>>,
+    level: Rc<Level<F>>,
+) -> TrExp {
+    // TODO fix
+    let mut current_level = level;
+    let mut prev_fp = TreeExp::temp(F::fp());
+    while fun_level.depth < current_level.depth {
+        let (static_link, _) = current_level
+            .static_link()
+            .expect("Inner level should have static link");
+        let previous_fp = F::build_exp(static_link.clone(), prev_fp);
+
+        current_level = current_level.parent.as_ref().unwrap().clone();
+        prev_fp = previous_fp;
+    }
+    let mut vec = vec![prev_fp];
+    vec.append(&mut args.into_iter().map(un_ex).collect());
+    TrExp::Ex(TreeExp::call(TreeExp::name(label), vec))
+}
+
+pub fn trans_var_dec<F: Frame>(access: TrAccess<F>, value_exp: TrExp) -> TrExp {
+    let dest = F::build_exp(access.0, TreeExp::Temp(F::fp()));
+    TrExp::Nx(TreeStm::movee(dest, un_ex(value_exp)))
+}
+
+pub fn noop() -> TrExp {
+    TrExp::Nx(TreeStm::exp(TreeExp::constt(0)))
+}
+
+pub fn trans_let(decs: Vec<TrExp>, exps: Vec<TrExp>) -> TrExp {
+    let decs = to_seq(decs.into_iter().map(un_nx).collect());
+    TrExp::Ex(TreeExp::eseq(decs, un_ex(trans_seq(exps))))
 }

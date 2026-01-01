@@ -1,13 +1,14 @@
 use crate::parse::ast::{Dec, Exp, Oper, TypeDecl, Var};
-use crate::parse::lexer::{Span, Spanned};
+use crate::parse::lexer::{Span, Spanned, span};
 use crate::semant::env::{Symbol, SymbolTable, TypeEnv, ValueEnv};
 use crate::semant::types::{Type, TypeRef, ValueEnvEntry};
 use crate::trans::frame::Frame;
 use crate::trans::temp::Label;
 use crate::trans::{
-    trans_array, trans_array_subscript, trans_binary_arithmetic, trans_field_access, trans_if, trans_if_else,
-    trans_int, trans_nil, trans_record, trans_rel_op, trans_simple_var, Level, TrExp,
-    Translator,
+    Level, TrExp, Translator, noop, trans_array, trans_array_subscript, trans_assign,
+    trans_binary_arithmetic, trans_break, trans_field_access, trans_fun_call, trans_if,
+    trans_if_else, trans_int, trans_let, trans_nil, trans_record, trans_rel_op, trans_seq,
+    trans_simple_var, trans_var_dec, trans_while,
 };
 use chumsky::span::SimpleSpan;
 use std::cell::RefCell;
@@ -24,8 +25,8 @@ pub type TranslatedExp = (TrExp, Type);
 pub struct Semant<'a, F: Frame> {
     value_env: &'a ValueEnv<F>,
     type_env: &'a TypeEnv,
-    translator: &'a Translator,
-    loop_end_label: Option<bool>,
+    translator: &'a Translator<F>,
+    loop_end_label: Option<Label>,
 }
 
 impl<'a, F: Frame> Semant<'a, F> {
@@ -37,7 +38,7 @@ impl<'a, F: Frame> Semant<'a, F> {
     pub fn new(
         value_env: &'a ValueEnv<F>,
         type_env: &'a TypeEnv,
-        translator: &'a Translator,
+        translator: &'a Translator<F>,
     ) -> Self {
         Self {
             value_env,
@@ -76,9 +77,11 @@ impl<'a, F: Frame> Semant<'a, F> {
                             },
                         ));
                     }
+                    let mut arg_exps = Vec::new();
                     for (arg, expected_type) in args.into_iter().zip(arg_types) {
                         let arg_span = arg.1;
-                        let (_, arg_type) = self.trans_exp_rec(arg, level.clone())?;
+                        let (arg_exp, arg_type) = self.trans_exp_rec(arg, level.clone())?;
+                        arg_exps.push(arg_exp);
                         if arg_type != expected_type {
                             return Err(TypeError::new(
                                 arg_span,
@@ -89,8 +92,10 @@ impl<'a, F: Frame> Semant<'a, F> {
                             ));
                         }
                     }
-                    unimplemented!();
-                    //Ok((exp, return_type))
+                    Ok((
+                        trans_fun_call(fun_label, arg_exps, fun_level, level),
+                        return_type,
+                    ))
                 } else {
                     Err(TypeError::new(fun_name.1, TypeErrorKind::InvalidIdentifier))
                 }
@@ -219,16 +224,18 @@ impl<'a, F: Frame> Semant<'a, F> {
                 }
             }
             Exp::Seq(exps) => {
-                let (_, ty) = self.trans_exp_rec(exps.last().unwrap().clone(), level)?;
-                unimplemented!();
-                //Ok((exp, ty))
+                let trans_exps = exps
+                    .into_iter()
+                    .map(|exp| self.trans_exp_rec(exp, level.clone()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let typ = trans_exps.last().unwrap().1.clone();
+                let trans_exps = trans_exps.into_iter().map(|(exp, _)| exp).collect();
+                Ok((trans_seq(trans_exps), typ))
             }
             Exp::Assign(var, exp) => {
                 let (var_exp, var_ty) = self.trans_var(*var, level.clone())?;
-                self.check_type(*exp.clone(), var_ty, level)?;
-                // Ok((*exp, Type::Void))
-
-                unimplemented!();
+                let value_exp = self.check_type(*exp.clone(), var_ty, level)?;
+                Ok((trans_assign(var_exp, value_exp), Type::Void))
             }
             Exp::If { cond, then, elsee } => {
                 let cond_span = cond.1;
@@ -272,15 +279,22 @@ impl<'a, F: Frame> Semant<'a, F> {
                 }
             }
             Exp::While { cond, body } => {
-                self.check_type(*cond, Type::Int, level.clone())?;
-                self.check_type(*body, Type::Void, level)?;
-                //Ok((exp, Type::Void))
-                unimplemented!()
+                let cond_exp = self.check_type(*cond, Type::Int, level.clone())?;
+
+                let end_label = Label::new_unnamed();
+                let old_label = self.loop_end_label.replace(end_label.clone());
+
+                let body_exp = self.check_type(*body, Type::Void, level)?;
+
+                self.loop_end_label = old_label;
+                Ok((trans_while(cond_exp, body_exp, end_label), Type::Void))
             }
             Exp::Break(span) => {
                 if self.in_loop() {
-                    // Ok((exp, Type::Void))
-                    unimplemented!()
+                    Ok((
+                        trans_break(self.loop_end_label.clone().unwrap()),
+                        Type::Void,
+                    ))
                 } else {
                     Err(TypeError::new(span, TypeErrorKind::BreakOutsideLoop))
                 }
@@ -292,33 +306,65 @@ impl<'a, F: Frame> Semant<'a, F> {
                 hi,
                 body,
             } => {
-                self.check_type(*lo, Type::Int, level.clone())?;
-                self.check_type(*hi, Type::Int, level.clone())?;
+                self.check_type(*lo.clone(), Type::Int, level.clone())?;
+                self.check_type(*hi.clone(), Type::Int, level.clone())?;
 
                 self.value_env.begin_scope();
                 let access = level.alloc_local(*escape.borrow());
                 self.value_env
-                    .enter(var, ValueEnvEntry::Var(Type::Int, access));
-                self.check_type(*body, Type::Void, level)?;
+                    .enter(var.clone(), ValueEnvEntry::Var(Type::Int, access));
+                self.check_type(*body.clone(), Type::Void, level.clone())?;
                 self.value_env.end_scope();
 
-                // Ok((exp, Type::Void))
-                unimplemented!()
+                let var_name = (var, SimpleSpan::from(0..0));
+                let limit_name = ("limit".to_string(), SimpleSpan::from(0..0));
+
+                // TODO this is wrong if hi = maxint
+                let rewritten = Exp::lett(
+                    vec![
+                        Dec::Var(var_name.clone(), None, lo, Rc::new(RefCell::new(false))),
+                        Dec::Var(limit_name.clone(), None, hi, Rc::new(RefCell::new(false))),
+                    ],
+                    vec![span(Exp::whilee(
+                        span(Exp::Op(
+                            (Oper::Le, SimpleSpan::from(0..0)),
+                            Box::new(span(Exp::var(Var::Simple(var_name.clone())))),
+                            Box::new(span(Exp::var(Var::Simple(limit_name)))),
+                        )),
+                        span(Exp::seq(vec![
+                            *body,
+                            span(Exp::assign(
+                                Var::Simple(var_name.clone()),
+                                span(Exp::op(
+                                    span(Oper::Plus),
+                                    span(Exp::var(Var::Simple(var_name))),
+                                    span(Exp::int(1)),
+                                )),
+                            )),
+                        ])),
+                    ))],
+                );
+
+                self.trans_exp_rec(span(rewritten), level)
             }
             Exp::Let(decs, exps) => {
                 self.value_env.begin_scope();
                 self.type_env.begin_scope();
+                let mut dec_exps = Vec::new();
                 for dec in decs {
-                    self.trans_dec(dec, level.clone())?;
+                    dec_exps.push(self.trans_dec(dec, level.clone())?);
                 }
-                let mut last = None;
+                let mut last_type = None;
+                let mut tr_exps = Vec::new();
                 for exp in exps {
-                    last = Some(self.trans_exp_rec(exp, level.clone())?);
+                    let (tr_ex, typ) = self.trans_exp_rec(exp, level.clone())?;
+                    tr_exps.push(tr_ex);
+                    last_type = Some(typ);
                 }
                 self.type_env.end_scope();
                 self.value_env.end_scope();
-                // Ok((exp, last.unwrap().1))
-                unimplemented!()
+
+                Ok((trans_let(dec_exps, tr_exps), last_type.unwrap()))
             }
             Exp::Array { typ, size, init } => {
                 let typ_span = typ.1;
@@ -413,7 +459,7 @@ impl<'a, F: Frame> Semant<'a, F> {
         }
     }
 
-    fn trans_dec(&mut self, dec: Dec, level: Rc<Level<F>>) -> Result<(), TypeError> {
+    fn trans_dec(&mut self, dec: Dec, level: Rc<Level<F>>) -> Result<TrExp, TypeError> {
         match dec {
             Dec::Function(funcs) => {
                 let mut func_levels = Vec::new();
@@ -451,51 +497,56 @@ impl<'a, F: Frame> Semant<'a, F> {
                         self.value_env
                             .enter(param.name, ValueEnvEntry::Var(param_type, access));
                     }
-                    let return_exp = self.trans_exp_rec(func.body.clone(), func_level)?;
+                    let old_label = self.loop_end_label.take();
+                    let (body_exp, body_type) =
+                        self.trans_exp_rec(func.body.clone(), func_level.clone())?;
+                    self.loop_end_label = old_label;
                     self.value_env.end_scope();
+                    self.translator.proc_entry_exit(func_level, body_exp);
 
                     if let Some(return_type_symbol) = func.result {
                         let return_type =
                             actual_type(env_lookup(self.type_env, return_type_symbol)?);
-                        if return_type != return_exp.1 {
+                        if return_type != body_type {
                             return Err(TypeError {
                                 span: func.body.1,
                                 kind: TypeErrorKind::TypeMismatch {
                                     expected: return_type,
-                                    found: return_exp.1,
+                                    found: body_type,
                                 },
                             });
                         }
-                    } else if return_exp.1 != Type::Void {
+                    } else if body_type != Type::Void {
                         return Err(TypeError {
                             span: func.body.1,
                             kind: TypeErrorKind::TypeMismatch {
                                 expected: Type::Void,
-                                found: return_exp.1,
+                                found: body_type,
                             },
                         });
                     }
                 }
-                Ok(())
+                Ok(noop())
             }
             Dec::Var(symb, type_annotation, exp, escaping) => {
-                let exp_ty = self.trans_exp_rec(*exp.clone(), level.clone())?;
+                let (value_exp, typ) = self.trans_exp_rec(*exp.clone(), level.clone())?;
                 if let Some(typ_sym) = type_annotation {
-                    let typ = actual_type(env_lookup(self.type_env, typ_sym)?);
-                    if typ != exp_ty.1 {
+                    let expected_type = actual_type(env_lookup(self.type_env, typ_sym)?);
+                    if expected_type != typ {
                         return Err(TypeError::new(
                             exp.1,
                             TypeErrorKind::TypeMismatch {
-                                expected: typ,
-                                found: exp_ty.1,
+                                expected: expected_type,
+                                found: typ,
                             },
                         ));
                     }
                 }
                 let access = level.alloc_local(*escaping.borrow());
+                let tr_exp = trans_var_dec(access.clone(), value_exp);
                 self.value_env
-                    .enter(symb.0, ValueEnvEntry::Var(exp_ty.1.clone(), access));
-                Ok(())
+                    .enter(symb.0, ValueEnvEntry::Var(typ, access));
+                Ok(tr_exp)
             }
             Dec::Type(named_types) => {
                 for ((name, _), _) in &named_types {
@@ -519,7 +570,7 @@ impl<'a, F: Frame> Semant<'a, F> {
                         return Err(TypeError::new(*span, TypeErrorKind::IllegalCycle));
                     }
                 }
-                Ok(())
+                Ok(noop())
             }
         }
     }
@@ -549,9 +600,9 @@ impl<'a, F: Frame> Semant<'a, F> {
         exp: Spanned<Exp>,
         expected_type: Type,
         level: Rc<Level<F>>,
-    ) -> Result<(), TypeError> {
+    ) -> Result<TrExp, TypeError> {
         let span = exp.1;
-        let (_, typ) = self.trans_exp_rec(exp, level)?;
+        let (exp, typ) = self.trans_exp_rec(exp, level)?;
         if typ != expected_type {
             Err(TypeError {
                 span,
@@ -561,7 +612,7 @@ impl<'a, F: Frame> Semant<'a, F> {
                 },
             })
         } else {
-            Ok(())
+            Ok(exp)
         }
     }
 

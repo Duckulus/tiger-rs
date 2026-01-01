@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 pub type Patch = Rc<RefCell<Option<Label>>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TreeStm {
     Seq(Box<TreeStm>, Box<TreeStm>),
     Label(Label),
@@ -70,7 +70,7 @@ impl TreeStm {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TreeExp {
     BinOp(TreeBinOp, Box<TreeExp>, Box<TreeExp>),
     Mem(Box<TreeExp>),
@@ -119,7 +119,7 @@ impl TreeExp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TreeBinOp {
     Plus,
     Minus,
@@ -133,16 +133,24 @@ pub enum TreeBinOp {
     Xor,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TreeRelOp {
-    EQ,
-    NE,
-    LT,
-    GT,
-    LE,
-    GE,
-    ULT,
-    ULE,
-    UGT,
-    UGE,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    Ult,
+    Ule,
+    Ugt,
+    Uge,
+}
+
+pub fn to_seq(stmts: Vec<TreeStm>) -> TreeStm{
+    if stmts.is_empty() {
+        TreeStm::exp(TreeExp::constt(0))
+    } else {
+        stmts.into_iter().rev().reduce(|acc,stm| TreeStm::seq(stm, acc)).unwrap()
+    }
 }

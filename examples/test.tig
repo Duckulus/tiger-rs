@@ -1,5 +1,6 @@
 let
   var x := 3
+  var lala := "was geht ab"
 in
   x + 3
 end

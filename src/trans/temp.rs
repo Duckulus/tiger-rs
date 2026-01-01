@@ -9,6 +9,12 @@ static NEXT_TEMP_ID: AtomicU32 = AtomicU32::new(FIRST_VIRTUAL_REG_ID);
 #[derive(Clone, Debug)]
 pub struct Temp(TempID);
 
+impl Default for Temp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Temp {
     pub fn new() -> Self {
         Self(NEXT_TEMP_ID.fetch_add(1, Ordering::SeqCst))

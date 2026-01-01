@@ -2,7 +2,7 @@ use crate::semant::env::SymbolTable;
 
 #[test]
 pub fn test_symbol_table() {
-    let mut table = SymbolTable::empty();
+    let table = SymbolTable::empty();
     
     assert!(table.lookup(&"hi".to_string()).is_none());
     

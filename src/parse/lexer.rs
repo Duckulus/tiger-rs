@@ -102,6 +102,10 @@ fn string<'a>() -> impl Parser<'a, &'a str, Token, extra::Err<Rich<'a, char>>> {
 pub type Span = SimpleSpan;
 pub type Spanned<T> = (T, Span);
 
+pub fn span<T>(value: T) -> Spanned<T> {
+    (value, SimpleSpan::from(0..0))
+}
+
 pub fn lexer<'a>() -> impl Parser<'a, &'a str, Vec<Spanned<Token>>, extra::Err<Rich<'a, char>>> {
     let num = regex("[0-9]+")
         .try_map_with(|s: &str, extra| s.parse().map_err(|e| Rich::custom(extra.span(), e)))

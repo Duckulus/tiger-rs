@@ -62,6 +62,7 @@ fn main() {
     let ir = semant.trans_exp(exp);
     if let Ok(ir) = ir {
         dbg!(ir);
+        dbg!(translator.get_result());
     } else if let Err(e) = ir {
         Report::build(ReportKind::Error, (filename.clone(), e.span().into_range()))
             .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
