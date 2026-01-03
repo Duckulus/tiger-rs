@@ -416,20 +416,28 @@ pub fn trans_fun_call<F: Frame>(
     fun_level: Rc<Level<F>>,
     level: Rc<Level<F>>,
 ) -> TrExp {
-    // TODO fix
-    let mut current_level = level;
-    let mut prev_fp = TreeExp::temp(F::fp());
-    while fun_level.depth < current_level.depth {
-        let (static_link, _) = current_level
-            .static_link()
-            .expect("Inner level should have static link");
-        let previous_fp = F::build_exp(static_link.clone(), prev_fp);
+    let mut static_link_exp;
 
-        current_level = current_level.parent.as_ref().unwrap().clone();
-        prev_fp = previous_fp;
+    if fun_level.depth > level.depth {
+        // calling child function -> pass own fp
+        static_link_exp = TreeExp::temp(F::fp());
+    } else {
+        // calling sibling or parent function -> climb from level to the level where is fun_level in
+        let mut current_level = level.clone();
+        static_link_exp = TreeExp::temp(F::fp());
+        while current_level.depth > fun_level.depth - 1 {
+            let (sl_access, _) = current_level
+                .static_link()
+                .expect("Inner level should have static link");
+            let previous_fp = F::build_exp(sl_access, static_link_exp);
+
+            current_level = current_level.parent.as_ref().unwrap().clone();
+            static_link_exp = previous_fp;
+        }
     }
-    let mut vec = vec![prev_fp];
-    vec.append(&mut args.into_iter().map(un_ex).collect());
+
+    let mut vec = vec![static_link_exp];
+    vec.extend(&mut args.into_iter().map(un_ex));
     TrExp::Ex(TreeExp::call(TreeExp::name(label), vec))
 }
 

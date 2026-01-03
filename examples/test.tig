@@ -1,6 +1,15 @@
 let
-  type foo = { a: int, b: int }
-  var foo := foo { a = 1, b = 1}
+  function a() : int =
+    let
+      var x := 5
+      function b(): int =
+        let
+          function c() : int = a()
+        in
+          a()
+        end
+    in 2
+    end
 in
- foo.b := 34
+  nil
 end
